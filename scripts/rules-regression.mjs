@@ -37,6 +37,7 @@ compileRuntime();
 
 const engine = await import(new URL(`file:///${path.join(runtimeDir, 'game', 'engine.js').replace(/\\/g, '/')}`));
 const {
+  AI_CHARACTERS,
   CARDS,
   DANDAN_NAME,
   checkHasActions,
@@ -142,6 +143,22 @@ test('mulligan stops at seven', () => {
   const afterExtra = reducer(state, { type: 'MULLIGAN' });
   expect(afterExtra.mulliganCount === 7, 'mulligan count advanced past seven');
   expect(afterExtra.player.hand.map((card) => card.id).join(',') === handSnapshot, 'extra mulligan changed hand after the cap');
+});
+
+test('AI roster exposes the full rival cast', () => {
+  const rivalIds = AI_CHARACTERS.map((character) => character.id);
+  [
+    'tortoise',
+    'shark',
+    'archivist',
+    'eel',
+    'siren',
+    'undertow',
+    'cartographer',
+    'piranha',
+    'hermit',
+    'leviathan'
+  ].forEach((id) => expect(rivalIds.includes(id), `missing rival ${id}`));
 });
 
 test('start game preserves free and adventure character metadata', () => {

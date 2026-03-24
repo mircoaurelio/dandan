@@ -60,46 +60,92 @@ export const SHARED_DECK_SIZE = DECKLIST.length;
 export const PREDICT_OPTIONS = Array.from(new Set(Object.values(CARDS).map(c => c.name))).sort();
 export const DANDAN_NAME = CARDS.DANDAN.name;
 export const INSTANT_OR_SORCERY_TYPES = ['Instant', 'Sorcery'];
+const CHARACTER_CARD_BONUSES = {
+  tortoise: {
+    'The Surgical Bay': 2.2,
+    'Halimar Depths': 1.8,
+    'Lonely Sandbar': 1.4,
+    'Remote Isle': 1.2,
+    'Svyelunite Temple': 1.6,
+    'Memory Lapse': 1.8,
+    'Unsubstantiate': 1.4
+  },
+  shark: {
+    [DANDAN_NAME]: 3.8,
+    'Capture of Jingzhou': 1.8,
+    'Chart a Course': 1.2,
+    'Control Magic': 1.2
+  },
+  archivist: {
+    Predict: 4.6,
+    'Mental Note': 3.4,
+    'Telling Time': 3.8,
+    Brainstorm: 3.4,
+    'Halimar Depths': 2.8,
+    'Mystic Sanctuary': 3.2
+  },
+  eel: {
+    Unsubstantiate: 3.4,
+    Metamorphose: 3.2,
+    'Crystal Spray': 2.4,
+    'Magical Hack': 2.2,
+    'Memory Lapse': 1.6
+  },
+  siren: {
+    'Control Magic': 4.8,
+    Unsubstantiate: 2.2,
+    Metamorphose: 2.8,
+    'Crystal Spray': 1.4
+  },
+  undertow: {
+    'The Surgical Bay': 4.4,
+    'Mental Note': 2.8,
+    Predict: 2.8,
+    'Memory Lapse': 1.8,
+    Unsubstantiate: 1.4
+  },
+  cartographer: {
+    Brainstorm: 4.0,
+    Predict: 3.4,
+    'Telling Time': 3.4,
+    'Halimar Depths': 3.0,
+    'Mystic Sanctuary': 3.4
+  },
+  piranha: {
+    [DANDAN_NAME]: 4.2,
+    'Capture of Jingzhou': 2.2,
+    'Chart a Course': 1.6,
+    'Control Magic': 1.2
+  },
+  hermit: {
+    'Memory Lapse': 2.6,
+    Unsubstantiate: 2.8,
+    'Control Magic': 1.8,
+    'Haunted Fengraf': 1.4,
+    'The Surgical Bay': 1.4
+  },
+  leviathan: {
+    [DANDAN_NAME]: 1.2,
+    'Memory Lapse': 1.6,
+    Unsubstantiate: 1.6,
+    Predict: 1.4,
+    Brainstorm: 1.4,
+    'Telling Time': 1.4,
+    'Control Magic': 1.4,
+    Metamorphose: 1.4,
+    'The Surgical Bay': 1.2,
+    'Mystic Sanctuary': 1.2
+  }
+};
 export const AI_DIFFICULTIES = ['easy', 'medium', 'hard'];
 export const AI_DIFFICULTY_LABELS = { easy: 'Easy', medium: 'Medium', hard: 'Hard' };
 export const AI_SPEED = { easy: { think: 900, pass: 250, resolve: 700 }, medium: { think: 450, pass: 120, resolve: 250 }, hard: { think: 140, pass: 40, resolve: 70 } };
 const DEFAULT_POLICY_WEIGHTS = {
-  easy: { aggression: 0.75, control: 0.25, drawBias: 0.25, mistakeRate: 0.35, landLimit: 3.6, counterBias: 0.45, stealBias: 0.55, attackBias: 0.75, blockBias: 0.7 },
-  medium: { aggression: 1.0, control: 0.55, drawBias: 0.5, mistakeRate: 0.12, landLimit: 4.2, counterBias: 0.9, stealBias: 0.95, attackBias: 0.95, blockBias: 0.95 }
+  easy: { aggression: 0.92, control: 0.52, drawBias: 0.48, mistakeRate: 0.22, landLimit: 4.0, counterBias: 0.72, stealBias: 0.82, attackBias: 0.92, blockBias: 0.88 },
+  medium: { aggression: 1.08, control: 0.72, drawBias: 0.7, mistakeRate: 0.05, landLimit: 4.25, counterBias: 1.02, stealBias: 1.06, attackBias: 1.03, blockBias: 1.02 }
 };
 export const DEFAULT_AI_CHARACTER_ID = 'shark';
 export const AI_CHARACTERS = [
-  {
-    id: 'deathfish',
-    name: 'Deathfish',
-    title: 'The Splashy Initiate',
-    summary: 'Simple pressure, obvious tricks, fast hands.',
-    tags: ['tempo', 'simple'],
-    style: {
-      aggressionMultiplier: 1.08,
-      controlMultiplier: 0.78,
-      drawBiasMultiplier: 0.84,
-      mistakeRateBonus: 0.02,
-      landLimitOffset: -0.1,
-      attackBiasMultiplier: 1.15,
-      blockBiasMultiplier: 0.84
-    }
-  },
-  {
-    id: 'redfin',
-    name: 'Redfin',
-    title: 'The Duelist',
-    summary: 'Balanced tempo fighter that turns small openings into fast kills.',
-    tags: ['tempo', 'balanced'],
-    style: {
-      aggressionMultiplier: 1.16,
-      controlMultiplier: 0.96,
-      drawBiasMultiplier: 0.92,
-      counterBiasMultiplier: 0.94,
-      attackBiasMultiplier: 1.2,
-      blockBiasMultiplier: 0.92
-    }
-  },
   {
     id: 'tortoise',
     name: 'The Tortoise',
@@ -116,58 +162,23 @@ export const AI_CHARACTERS = [
       attackBiasMultiplier: 0.82,
       blockBiasMultiplier: 1.22,
       searchDepthBonus: 1,
-      replyBreadthBonus: 1,
-      survivalBreadthBonus: 1
-    }
-  },
-  {
-    id: 'archivist',
-    name: 'The Archivist',
-    title: 'Keeper Of Topdecks',
-    summary: 'Leans hard on memory, library sculpting, and exact sequencing.',
-    tags: ['memory', 'library'],
-    style: {
-      aggressionMultiplier: 0.92,
-      controlMultiplier: 1.15,
-      drawBiasMultiplier: 1.34,
-      counterBiasMultiplier: 1.08,
-      stealBiasMultiplier: 0.96,
-      attackBiasMultiplier: 0.94,
-      blockBiasMultiplier: 1.04,
-      searchDepthBonus: 1,
-      rolloutDecisionBonus: 1
-    }
-  },
-  {
-    id: 'undertow',
-    name: 'The Undertow',
-    title: 'Winner Of Draw Wars',
-    summary: 'Plays for stack races, Bay timing, and top-card denial.',
-    tags: ['stack', 'draw-wars'],
-    style: {
-      aggressionMultiplier: 0.98,
-      controlMultiplier: 1.2,
-      drawBiasMultiplier: 1.14,
-      landLimitOffset: 0.2,
-      counterBiasMultiplier: 1.16,
-      blockBiasMultiplier: 1.08,
-      searchDepthBonus: 1,
       rootBreadthBonus: 1,
-      rolloutDecisionBonus: 1
+      replyBreadthBonus: 1,
+      survivalBreadthBonus: 2
     }
   },
   {
     id: 'shark',
     name: 'The Shark',
     title: 'The Tempo Predator',
-    summary: 'Attacks ruthlessly and punishes any stumble or tap-out.',
+    summary: 'Tempo killer. Slams Dandan when protected, punishes stumbles, and loves crackback lethals.',
     tags: ['tempo', 'pressure'],
     style: {
-      aggressionMultiplier: 1.26,
-      controlMultiplier: 1.04,
-      drawBiasMultiplier: 0.9,
-      counterBiasMultiplier: 0.98,
-      attackBiasMultiplier: 1.3,
+      aggressionMultiplier: 1.34,
+      controlMultiplier: 1.08,
+      drawBiasMultiplier: 0.92,
+      counterBiasMultiplier: 1.04,
+      attackBiasMultiplier: 1.36,
       blockBiasMultiplier: 0.9,
       searchDepthBonus: 1,
       rootBreadthBonus: 1,
@@ -175,26 +186,164 @@ export const AI_CHARACTERS = [
     }
   },
   {
+    id: 'archivist',
+    name: 'The Archivist',
+    title: 'Keeper Of Topdecks',
+    summary: 'Memory monster. Best at Predict, Mental Note, Halimar Depths, Telling Time, and Mystic Sanctuary.',
+    tags: ['memory', 'library'],
+    style: {
+      aggressionMultiplier: 0.94,
+      controlMultiplier: 1.2,
+      drawBiasMultiplier: 1.42,
+      counterBiasMultiplier: 1.12,
+      stealBiasMultiplier: 0.96,
+      attackBiasMultiplier: 0.94,
+      blockBiasMultiplier: 1.06,
+      searchDepthBonus: 1,
+      rootBreadthBonus: 1,
+      rolloutDecisionBonus: 2
+    }
+  },
+  {
+    id: 'eel',
+    name: 'The Eel',
+    title: 'The Slipstream Trickster',
+    summary: 'Trickster. Passes often, wins on stack timing, bounce traps, and surprise rescues.',
+    tags: ['tricks', 'stack'],
+    style: {
+      aggressionMultiplier: 0.96,
+      controlMultiplier: 1.28,
+      drawBiasMultiplier: 1.06,
+      counterBiasMultiplier: 1.22,
+      stealBiasMultiplier: 0.9,
+      attackBiasMultiplier: 0.92,
+      blockBiasMultiplier: 1.08,
+      searchDepthBonus: 1,
+      replyBreadthBonus: 2,
+      rolloutDecisionBonus: 1,
+      survivalBreadthBonus: 1
+    }
+  },
+  {
+    id: 'siren',
+    name: 'The Siren',
+    title: 'The Borrowed Tide',
+    summary: 'Theft/control specialist. Prioritizes Control Magic, self-bounce to break theft, and long stack traps.',
+    tags: ['theft', 'control'],
+    style: {
+      aggressionMultiplier: 0.92,
+      controlMultiplier: 1.34,
+      drawBiasMultiplier: 1.06,
+      counterBiasMultiplier: 1.18,
+      stealBiasMultiplier: 1.42,
+      attackBiasMultiplier: 0.9,
+      blockBiasMultiplier: 1.12,
+      searchDepthBonus: 1,
+      replyBreadthBonus: 2,
+      rolloutDecisionBonus: 1,
+      survivalBreadthBonus: 1
+    }
+  },
+  {
+    id: 'undertow',
+    name: 'The Undertow',
+    title: 'Winner Of Draw Wars',
+    summary: 'Draw-war expert. Loves Surgical Bay, instant-speed races, top-card denial, and response windows.',
+    tags: ['stack', 'draw-wars'],
+    style: {
+      aggressionMultiplier: 0.98,
+      controlMultiplier: 1.24,
+      drawBiasMultiplier: 1.22,
+      landLimitOffset: 0.24,
+      counterBiasMultiplier: 1.22,
+      blockBiasMultiplier: 1.1,
+      searchDepthBonus: 1,
+      rootBreadthBonus: 1,
+      replyBreadthBonus: 1,
+      rolloutDecisionBonus: 2
+    }
+  },
+  {
+    id: 'cartographer',
+    name: 'The Cartographer',
+    title: 'The Library Sculptor',
+    summary: 'Library sculptor. Maximizes topdeck quality with Brainstorm, Sanctuary, Halimar, and Predict.',
+    tags: ['library', 'setup'],
+    style: {
+      aggressionMultiplier: 0.94,
+      controlMultiplier: 1.18,
+      drawBiasMultiplier: 1.4,
+      landLimitOffset: 0.18,
+      counterBiasMultiplier: 1.08,
+      attackBiasMultiplier: 0.9,
+      blockBiasMultiplier: 1.02,
+      searchDepthBonus: 1,
+      rootBreadthBonus: 1,
+      rolloutDecisionBonus: 2,
+      autoStepBonus: 4
+    }
+  },
+  {
+    id: 'piranha',
+    name: 'The Piranha',
+    title: 'The Bloodwake Sprinter',
+    summary: 'Hyper-aggressive. Converts tiny tempo edges into lethal pressure, blocks less, and attacks relentlessly.',
+    tags: ['aggressive', 'tempo'],
+    style: {
+      aggressionMultiplier: 1.42,
+      controlMultiplier: 0.96,
+      drawBiasMultiplier: 0.86,
+      counterBiasMultiplier: 0.94,
+      attackBiasMultiplier: 1.44,
+      blockBiasMultiplier: 0.82,
+      searchDepthBonus: 1,
+      rootBreadthBonus: 1,
+      rolloutDecisionBonus: 1
+    }
+  },
+  {
+    id: 'hermit',
+    name: 'The Hermit Crab',
+    title: 'The Last Shell',
+    summary: 'Survival specialist. Extremely hard to kill, holds interaction, and values not dying over greed.',
+    tags: ['survival', 'control'],
+    style: {
+      aggressionMultiplier: 0.84,
+      controlMultiplier: 1.38,
+      drawBiasMultiplier: 1.08,
+      landLimitOffset: 0.35,
+      counterBiasMultiplier: 1.26,
+      stealBiasMultiplier: 1.1,
+      attackBiasMultiplier: 0.86,
+      blockBiasMultiplier: 1.3,
+      searchDepthBonus: 1,
+      rootBreadthBonus: 1,
+      replyBreadthBonus: 2,
+      autoStepBonus: 4,
+      survivalBreadthBonus: 2
+    }
+  },
+  {
     id: 'leviathan',
     name: 'The Leviathan',
     title: 'Honest Final Boss',
-    summary: 'Deepest fair searcher. No cheating, just relentless accuracy.',
+    summary: 'Fair final honest boss. Same public info only, but deepest search, best memory, and best motif coverage.',
     tags: ['boss', 'fair'],
     style: {
-      aggressionMultiplier: 1.1,
-      controlMultiplier: 1.34,
-      drawBiasMultiplier: 1.18,
+      aggressionMultiplier: 1.12,
+      controlMultiplier: 1.38,
+      drawBiasMultiplier: 1.22,
       landLimitOffset: 0.3,
-      counterBiasMultiplier: 1.26,
-      stealBiasMultiplier: 1.14,
+      counterBiasMultiplier: 1.3,
+      stealBiasMultiplier: 1.16,
       attackBiasMultiplier: 1.08,
-      blockBiasMultiplier: 1.12,
-      searchDepthBonus: 2,
+      blockBiasMultiplier: 1.14,
+      searchDepthBonus: 3,
       rootBreadthBonus: 2,
-      replyBreadthBonus: 1,
-      rolloutDecisionBonus: 2,
-      autoStepBonus: 10,
-      survivalBreadthBonus: 2
+      replyBreadthBonus: 2,
+      rolloutDecisionBonus: 3,
+      autoStepBonus: 14,
+      survivalBreadthBonus: 3
     }
   }
 ];
@@ -248,13 +397,14 @@ const applyCharacterStyle = (basePolicy, characterId = null) => {
 };
 const getHardModePolicy = (policy = trainedPolicy.weights) => normalizePolicy({
   ...policy,
-  aggression: Math.max(1.15, policy?.aggression ?? 1),
-  control: Math.max(0.8, policy?.control ?? 0.5),
+  aggression: Math.max(1.22, policy?.aggression ?? 1),
+  control: Math.max(1.02, policy?.control ?? 0.5),
   mistakeRate: 0,
-  counterBias: Math.max(1.05, policy?.counterBias ?? policy?.control ?? 0.5),
-  stealBias: Math.max(1.05, policy?.stealBias ?? policy?.control ?? 0.5),
-  attackBias: Math.max(1.1, policy?.attackBias ?? policy?.aggression ?? 1),
-  blockBias: Math.max(0.85, policy?.blockBias ?? policy?.control ?? 0.5)
+  counterBias: Math.max(1.18, policy?.counterBias ?? policy?.control ?? 0.5),
+  stealBias: Math.max(1.14, policy?.stealBias ?? policy?.control ?? 0.5),
+  attackBias: Math.max(1.18, policy?.attackBias ?? policy?.aggression ?? 1),
+  blockBias: Math.max(1.04, policy?.blockBias ?? policy?.control ?? 0.5),
+  perfectPlay: true
 });
 export const getLivePolicyWeights = (difficulty, characterId = null, basePolicy = null) => {
   const resolvedDifficulty = difficulty || 'medium';
@@ -265,6 +415,18 @@ export const getLivePolicyWeights = (difficulty, characterId = null, basePolicy 
   return applyCharacterStyle(normalizedBase, characterId);
 };
 const getActorCharacterId = (state, actor = 'ai') => actor === 'player' ? state?.playerAiCharacterId : state?.aiCharacterId;
+const getCharacterCardBonus = (state, actor, card) => CHARACTER_CARD_BONUSES[getActorCharacterId(state, actor)]?.[card?.name] ?? 0;
+const getInteractionHoldThreshold = (state, actor) => {
+  switch (getActorCharacterId(state, actor)) {
+    case 'eel': return 13.5;
+    case 'siren': return 12.8;
+    case 'undertow': return 12.4;
+    case 'hermit': return 14;
+    case 'archivist': return 11.8;
+    case 'leviathan': return 12;
+    default: return 10;
+  }
+};
 export const getAiPolicyForActor = (state, actor = 'ai', difficulty = state?.difficulty || 'medium') => {
   const characterId = getActorCharacterId(state, actor);
   return getLivePolicyWeights(difficulty, characterId);
@@ -983,7 +1145,7 @@ const getAiCardValue = (state, actor, card, policy) => {
   const topCards = getKnownTopDeckCards(state, actor, 3);
   const lowValueTopCards = topCards.filter(topCard => getBaseCardValue(topCard) <= 4).length;
   const topdeckDenial = getTopdeckDenialScore(state, actor, 2);
-  let score = getBaseCardValue(card);
+  let score = getBaseCardValue(card) + getCharacterCardBonus(state, actor, card);
 
   if (card.isLand) {
     score += landsInPlay < 3 ? 4.5 : landsInPlay < 5 ? 2.2 : 0.4;
@@ -1374,6 +1536,7 @@ const getLandPlayScore = (state, actor, card, lands = state[actor].hand.filter(p
   if (card.name === 'The Surgical Bay') score += state[actor].hand.length <= 3 ? 1.1 : 0.4;
   if (card.name === 'Haunted Fengraf') score += state.graveyard.some(isCreatureCard) ? -0.4 : -1.6;
   if (wantsBlueSoon) score += (card.blueSources || 0) > 0 ? 2.5 : -3.5;
+  score += getCharacterCardBonus(state, actor, card);
 
   return score;
 };
@@ -1871,7 +2034,7 @@ const chooseHeuristicAiAction = (
         difficulty === 'hard' &&
         hasLiveInteraction(state, actor, ['Memory Lapse', 'Unsubstantiate']) &&
         getAccessiblePlayableCardPressure(state, actor, opponent, [...HIGH_IMPACT_SPELLS]) > 0.35 &&
-        spellScore < 10;
+        spellScore < getInteractionHoldThreshold(state, actor);
       if (!shouldHoldInteraction && !shouldMakeMistake(0.08, policy)) {
         return { type: 'CAST_SPELL', player: actor, cardId: spell.id };
       }
@@ -1922,14 +2085,33 @@ const finalizeCandidateActions = (candidateMap, limit) => {
 
   return chosen.map(entry => entry.action);
 };
-const HARD_TACTICAL_SEARCH = {
-  playerGame: { tacticalDepth: 3, rolloutDecisions: 8, rootBreadth: 7, replyBreadth: 4, autoSteps: 40 },
-  mirrorGame: { tacticalDepth: 2, rolloutDecisions: 5, rootBreadth: 5, replyBreadth: 3, autoSteps: 30 }
+const shouldPreferMediumHeuristicAction = (tacticalAction, heuristicAction) => {
+  if (!heuristicAction || heuristicAction.type === 'PASS_PRIORITY') return false;
+  if (!tacticalAction || tacticalAction.type === 'PASS_PRIORITY') return true;
+
+  if (heuristicAction.type === 'CAST_SPELL' && tacticalAction.type === 'CAST_SPELL' && heuristicAction.cardId === tacticalAction.cardId) {
+    const heuristicTarget = heuristicAction.target?.card || heuristicAction.target;
+    const tacticalTarget = tacticalAction.target?.card || tacticalAction.target;
+    if (heuristicTarget?.name === DANDAN_NAME && tacticalTarget?.isLand) return true;
+  }
+
+  return false;
 };
-const getTacticalSearchConfig = (state, policy = null) => {
+const TACTICAL_SEARCH = {
+  medium: {
+    playerGame: { tacticalDepth: 2, rolloutDecisions: 5, rootBreadth: 5, replyBreadth: 3, autoSteps: 26 },
+    mirrorGame: { tacticalDepth: 2, rolloutDecisions: 4, rootBreadth: 4, replyBreadth: 3, autoSteps: 22 }
+  },
+  hard: {
+    playerGame: { tacticalDepth: 4, rolloutDecisions: 9, rootBreadth: 8, replyBreadth: 5, autoSteps: 48 },
+    mirrorGame: { tacticalDepth: 3, rolloutDecisions: 6, rootBreadth: 6, replyBreadth: 4, autoSteps: 34 }
+  }
+};
+const getTacticalSearchConfig = (state, policy = null, difficulty = 'hard') => {
+  const searchTier = TACTICAL_SEARCH[difficulty] || TACTICAL_SEARCH.hard;
   const baseConfig = state.gameMode === 'ai_vs_ai'
-    ? HARD_TACTICAL_SEARCH.mirrorGame
-    : HARD_TACTICAL_SEARCH.playerGame;
+    ? searchTier.mirrorGame
+    : searchTier.playerGame;
   if (!policy) return baseConfig;
   return {
     tacticalDepth: Math.max(1, baseConfig.tacticalDepth + (policy.searchDepthBonus || 0)),
@@ -2168,7 +2350,7 @@ const getTacticalActionCandidates = (
   }
 
   if (state.turn === actor && state.phase !== 'upkeep' && state[actor].landsPlayed === 0) {
-    const lands = [...state[actor].hand.filter(card => card.isLand)]
+    const lands = [...state[actor].hand.filter(card => card.isLand && (!isTortoise(state, actor) || !isIslandLandCard(card)))]
       .sort((left, right) => getLandPlayScore(state, actor, right) - getLandPlayScore(state, actor, left))
       .slice(0, 2);
     lands.forEach(land => addCandidate(
@@ -2451,10 +2633,10 @@ const evaluateTacticalPosition = (state, rootActor, policies, config, depth, alp
   }
   return best;
 };
-const chooseTacticalAiAction = (state, actor, policy) => {
+const chooseTacticalAiAction = (state, actor, policy, difficulty = 'hard') => {
   if (!state.priority || state.priority !== actor || state.pendingAction || state.pendingTargetSelection) return null;
 
-  const config = getTacticalSearchConfig(state, policy);
+  const config = getTacticalSearchConfig(state, policy, difficulty);
   const policies = {
     player: getHardModePolicy(trainedPolicy.weights),
     ai: getHardModePolicy(trainedPolicy.weights)
@@ -2483,13 +2665,19 @@ const chooseTacticalAiAction = (state, actor, policy) => {
 };
 export const chooseAiAction = (state, actor, difficulty = 'medium', policy = getLivePolicyWeights(difficulty)) => {
   const normalizedPolicy = difficulty === 'hard' ? getHardModePolicy(policy) : normalizePolicy(policy);
-  if (difficulty === 'hard' && state.turn === actor && ['main1', 'main2', 'upkeep'].includes(state.phase)) {
+  if (difficulty !== 'easy' && state.turn === actor && ['main1', 'main2', 'upkeep'].includes(state.phase)) {
     const survivalAction = chooseImmediateSurvivalAction(state, actor, difficulty, normalizedPolicy);
     if (survivalAction) return survivalAction;
   }
-  if (difficulty === 'hard') {
-    const tacticalAction = chooseTacticalAiAction(state, actor, normalizedPolicy);
-    if (tacticalAction) return tacticalAction;
+  if (difficulty === 'medium' || difficulty === 'hard') {
+    const tacticalAction = chooseTacticalAiAction(state, actor, normalizedPolicy, difficulty);
+    if (tacticalAction) {
+      if (difficulty === 'medium') {
+        const heuristicAction = chooseHeuristicAiAction(state, actor, difficulty, normalizedPolicy);
+        if (shouldPreferMediumHeuristicAction(tacticalAction, heuristicAction)) return heuristicAction;
+      }
+      return tacticalAction;
+    }
   }
   return chooseHeuristicAiAction(state, actor, difficulty, normalizedPolicy);
 };

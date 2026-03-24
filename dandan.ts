@@ -2,8 +2,13 @@
 import { Play, SkipForward, Activity, Layers, Skull, Image as ImageIcon, Settings, X, Sun, Moon, Swords, Volume2, VolumeX, ArrowLeftRight, Target, Droplet, Shield, CloudRain, LogOut } from 'lucide-react';
 import { AI_CHARACTERS, AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, AI_SPEED, CARDS, DANDAN_NAME, DEFAULT_AI_CHARACTER_ID, PREDICT_OPTIONS, SHARED_DECK_SIZE, canDandanAttackDefender, checkHasActions, chooseAiAction, controlsIsland, createGameReducer, getAiCharacter, getAiPendingActions, getAiPolicyForActor, getAvailableMana, getManaPool, initialState, isActivatable, isCastable, isCyclable, isValidTarget } from './src/game/engine';
 import archivistPortrait from './img/Archivist.png';
+import cartographerPortrait from './img/Cartographer.png';
+import eelPortrait from './img/Eel.png';
+import hermitPortrait from './img/Hermit.png';
 import leviathanPortrait from './img/Leviathan.png';
+import piranhaPortrait from './img/Piranha.png';
 import sharkPortrait from './img/shark.png';
+import sirenPortrait from './img/siren.png';
 import tortoisePortrait from './img/Tortoise.png';
 import undertowPortrait from './img/Undertow.png';
 
@@ -214,17 +219,20 @@ const DIFFICULTY_ART = {
   hard: `${ASSET_BASE_URL}difficulty/shark.png`
 };
 const CHARACTER_ART = {
-  deathfish: DIFFICULTY_ART.easy,
-  redfin: DIFFICULTY_ART.medium,
   tortoise: tortoisePortrait,
-  archivist: archivistPortrait,
-  undertow: undertowPortrait,
   shark: sharkPortrait,
+  archivist: archivistPortrait,
+  eel: eelPortrait,
+  siren: sirenPortrait,
+  undertow: undertowPortrait,
+  cartographer: cartographerPortrait,
+  piranha: piranhaPortrait,
+  hermit: hermitPortrait,
   leviathan: leviathanPortrait
 };
 const getCharacterPortrait = (characterId, difficulty = 'medium') => CHARACTER_ART[characterId] || DIFFICULTY_ART[difficulty] || DIFFICULTY_ART.medium;
-const APP_VERSION = 'v0.2.0';
-const ADVENTURE_ROUTE = ['deathfish', 'redfin', 'tortoise', 'archivist', 'undertow', 'shark', 'leviathan'];
+const APP_VERSION = 'v0.3.0';
+const ADVENTURE_ROUTE = ['tortoise', 'shark', 'archivist', 'eel', 'siren', 'undertow', 'cartographer', 'piranha', 'hermit', 'leviathan'];
 const ADVENTURE_BOSS_ID = ADVENTURE_ROUTE[ADVENTURE_ROUTE.length - 1];
 
 // --- PRELOADER COMPONENT ---
