@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.tmp-smoke/
+vite.out.log
+vite.err.log

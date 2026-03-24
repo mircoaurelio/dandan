@@ -1,0 +1,968 @@
+{
+  "generatedAt": "2026-03-23T23:14:26.174Z",
+  "totalGames": 500,
+  "concurrency": 6,
+  "champion": {
+    "aggression": 1.31139176763602,
+    "control": 1.3389124119551166,
+    "drawBias": 0.856889065811332,
+    "mistakeRate": 0.036854223073730236,
+    "landLimit": 4.855394602236787,
+    "counterBias": 1.4097900561261172,
+    "stealBias": 1.3273032739889943,
+    "attackBias": 1.551065289800391,
+    "blockBias": 1.2102051649259509
+  },
+  "history": [
+    {
+      "generation": 1,
+      "result": {
+        "games": 500,
+        "playerWins": 359,
+        "aiWins": 141,
+        "totalMargin": 18156.3
+      },
+      "winRate": 0.718,
+      "tested": 5,
+      "champion": {
+        "aggression": 0.9067433568922717,
+        "control": 1.1851526839163045,
+        "drawBias": 0.9258848419199098,
+        "mistakeRate": 0.02156171159600797,
+        "landLimit": 4.989993484990316,
+        "counterBias": 1.1971203290910695,
+        "stealBias": 1.2459718739869334,
+        "attackBias": 1.0196766034880405,
+        "blockBias": 1.0607748159125763
+      },
+      "challenger": {
+        "aggression": 0.9067433568922717,
+        "control": 1.1851526839163045,
+        "drawBias": 0.9258848419199098,
+        "mistakeRate": 0.02156171159600797,
+        "landLimit": 4.989993484990316,
+        "counterBias": 1.1971203290910695,
+        "stealBias": 1.2459718739869334,
+        "attackBias": 1.0196766034880405,
+        "blockBias": 1.0607748159125763
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.718,
+          "result": {
+            "games": 500,
+            "playerWins": 359,
+            "aiWins": 141,
+            "totalMargin": 18156.3
+          },
+          "challenger": {
+            "aggression": 0.9067433568922717,
+            "control": 1.1851526839163045,
+            "drawBias": 0.9258848419199098,
+            "mistakeRate": 0.02156171159600797,
+            "landLimit": 4.989993484990316,
+            "counterBias": 1.1971203290910695,
+            "stealBias": 1.2459718739869334,
+            "attackBias": 1.0196766034880405,
+            "blockBias": 1.0607748159125763
+          }
+        },
+        {
+          "winRate": 0.586,
+          "result": {
+            "games": 500,
+            "playerWins": 293,
+            "aiWins": 207,
+            "totalMargin": 16406.800000000003
+          },
+          "challenger": {
+            "aggression": 0.9498663322657614,
+            "control": 1.3380216061607442,
+            "drawBias": 0.8439555651403496,
+            "mistakeRate": 0.024863852995444136,
+            "landLimit": 4.837105877932418,
+            "counterBias": 1.0552811593955764,
+            "stealBias": 1.0864796252103184,
+            "attackBias": 0.8751913829288719,
+            "blockBias": 1.0569528144744615
+          }
+        },
+        {
+          "winRate": 0.552,
+          "result": {
+            "games": 500,
+            "playerWins": 276,
+            "aiWins": 224,
+            "totalMargin": 16578.700000000004
+          },
+          "challenger": {
+            "aggression": 0.9438498037063991,
+            "control": 1.2601348903360983,
+            "drawBias": 0.95070768279799,
+            "mistakeRate": 0.01846227615272058,
+            "landLimit": 4.626583992435312,
+            "counterBias": 1.1100586743193266,
+            "stealBias": 1.1081826936394201,
+            "attackBias": 0.9958695139286251,
+            "blockBias": 0.9942768566700255
+          }
+        }
+      ]
+    },
+    {
+      "generation": 2,
+      "result": {
+        "games": 500,
+        "playerWins": 270,
+        "aiWins": 230,
+        "totalMargin": 17284.8
+      },
+      "winRate": 0.54,
+      "tested": 5,
+      "champion": {
+        "aggression": 0.8528357248130147,
+        "control": 1.105643590325386,
+        "drawBias": 0.9232597761144371,
+        "mistakeRate": 0.02854803254021354,
+        "landLimit": 5.05879664006081,
+        "counterBias": 1.2967439141012447,
+        "stealBias": 1.2641509222996103,
+        "attackBias": 1.0349778206010924,
+        "blockBias": 1.1425501866120293
+      },
+      "challenger": {
+        "aggression": 0.8528357248130147,
+        "control": 1.105643590325386,
+        "drawBias": 0.9232597761144371,
+        "mistakeRate": 0.02854803254021354,
+        "landLimit": 5.05879664006081,
+        "counterBias": 1.2967439141012447,
+        "stealBias": 1.2641509222996103,
+        "attackBias": 1.0349778206010924,
+        "blockBias": 1.1425501866120293
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.54,
+          "result": {
+            "games": 500,
+            "playerWins": 270,
+            "aiWins": 230,
+            "totalMargin": 17284.8
+          },
+          "challenger": {
+            "aggression": 0.8528357248130147,
+            "control": 1.105643590325386,
+            "drawBias": 0.9232597761144371,
+            "mistakeRate": 0.02854803254021354,
+            "landLimit": 5.05879664006081,
+            "counterBias": 1.2967439141012447,
+            "stealBias": 1.2641509222996103,
+            "attackBias": 1.0349778206010924,
+            "blockBias": 1.1425501866120293
+          }
+        },
+        {
+          "winRate": 0.528,
+          "result": {
+            "games": 500,
+            "playerWins": 264,
+            "aiWins": 236,
+            "totalMargin": 16940.7
+          },
+          "challenger": {
+            "aggression": 0.9863824111883838,
+            "control": 1.2216845474379803,
+            "drawBias": 0.9466562172989308,
+            "mistakeRate": 0.03597272980996419,
+            "landLimit": 5.139233362952126,
+            "counterBias": 1.1143509393959128,
+            "stealBias": 1.2849787472174015,
+            "attackBias": 0.9820846619087602,
+            "blockBias": 1.0735192954606663
+          }
+        },
+        {
+          "winRate": 0.484,
+          "result": {
+            "games": 500,
+            "playerWins": 242,
+            "aiWins": 258,
+            "totalMargin": 16985.5
+          },
+          "challenger": {
+            "aggression": 0.9137508166582594,
+            "control": 1.2472755878730961,
+            "drawBias": 0.957904750778262,
+            "mistakeRate": 0.03163496830614475,
+            "landLimit": 4.959893558686527,
+            "counterBias": 1.2245559239269557,
+            "stealBias": 1.20625039980632,
+            "attackBias": 0.9634803796141554,
+            "blockBias": 1.0621023764870288
+          }
+        }
+      ]
+    },
+    {
+      "generation": 3,
+      "result": {
+        "games": 500,
+        "playerWins": 327,
+        "aiWins": 173,
+        "totalMargin": 17026.299999999996
+      },
+      "winRate": 0.654,
+      "tested": 5,
+      "champion": {
+        "aggression": 0.963448854590706,
+        "control": 1.182352158481511,
+        "drawBias": 0.9608768685065752,
+        "mistakeRate": 0.035793769316259105,
+        "landLimit": 4.862976610954355,
+        "counterBias": 1.256960526083643,
+        "stealBias": 1.37258603272672,
+        "attackBias": 1.0679090254455152,
+        "blockBias": 1.153604039972112
+      },
+      "challenger": {
+        "aggression": 0.963448854590706,
+        "control": 1.182352158481511,
+        "drawBias": 0.9608768685065752,
+        "mistakeRate": 0.035793769316259105,
+        "landLimit": 4.862976610954355,
+        "counterBias": 1.256960526083643,
+        "stealBias": 1.37258603272672,
+        "attackBias": 1.0679090254455152,
+        "blockBias": 1.153604039972112
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.654,
+          "result": {
+            "games": 500,
+            "playerWins": 327,
+            "aiWins": 173,
+            "totalMargin": 17026.299999999996
+          },
+          "challenger": {
+            "aggression": 0.963448854590706,
+            "control": 1.182352158481511,
+            "drawBias": 0.9608768685065752,
+            "mistakeRate": 0.035793769316259105,
+            "landLimit": 4.862976610954355,
+            "counterBias": 1.256960526083643,
+            "stealBias": 1.37258603272672,
+            "attackBias": 1.0679090254455152,
+            "blockBias": 1.153604039972112
+          }
+        },
+        {
+          "winRate": 0.636,
+          "result": {
+            "games": 500,
+            "playerWins": 318,
+            "aiWins": 182,
+            "totalMargin": 18036.3
+          },
+          "challenger": {
+            "aggression": 0.9491350492169067,
+            "control": 1.0295379209464544,
+            "drawBias": 0.8499717165552575,
+            "mistakeRate": 0.036879467239801275,
+            "landLimit": 4.8227974637744815,
+            "counterBias": 1.4013970853787232,
+            "stealBias": 1.2341610385077064,
+            "attackBias": 1.1122876731485916,
+            "blockBias": 1.1713869843411997
+          }
+        },
+        {
+          "winRate": 0.606,
+          "result": {
+            "games": 500,
+            "playerWins": 303,
+            "aiWins": 197,
+            "totalMargin": 17271.899999999998
+          },
+          "challenger": {
+            "aggression": 0.7336222819761927,
+            "control": 1.1803748047895466,
+            "drawBias": 0.8684471395227178,
+            "mistakeRate": 0.013737696850153882,
+            "landLimit": 5.1091955659267105,
+            "counterBias": 1.3985629470884842,
+            "stealBias": 1.2860384431018503,
+            "attackBias": 1.0312585238804026,
+            "blockBias": 1.2024535166806678
+          }
+        }
+      ]
+    },
+    {
+      "generation": 4,
+      "result": {
+        "games": 500,
+        "playerWins": 329,
+        "aiWins": 171,
+        "totalMargin": 18000.1
+      },
+      "winRate": 0.658,
+      "tested": 5,
+      "champion": {
+        "aggression": 1.066721918146293,
+        "control": 1.1668604204853326,
+        "drawBias": 1.0206500107598468,
+        "mistakeRate": 0.03740471913478001,
+        "landLimit": 4.75472814250781,
+        "counterBias": 1.2525747119910937,
+        "stealBias": 1.429435465495716,
+        "attackBias": 1.1391386038459448,
+        "blockBias": 1.1293116543053894
+      },
+      "challenger": {
+        "aggression": 1.066721918146293,
+        "control": 1.1668604204853326,
+        "drawBias": 1.0206500107598468,
+        "mistakeRate": 0.03740471913478001,
+        "landLimit": 4.75472814250781,
+        "counterBias": 1.2525747119910937,
+        "stealBias": 1.429435465495716,
+        "attackBias": 1.1391386038459448,
+        "blockBias": 1.1293116543053894
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.658,
+          "result": {
+            "games": 500,
+            "playerWins": 329,
+            "aiWins": 171,
+            "totalMargin": 18000.1
+          },
+          "challenger": {
+            "aggression": 1.066721918146293,
+            "control": 1.1668604204853326,
+            "drawBias": 1.0206500107598468,
+            "mistakeRate": 0.03740471913478001,
+            "landLimit": 4.75472814250781,
+            "counterBias": 1.2525747119910937,
+            "stealBias": 1.429435465495716,
+            "attackBias": 1.1391386038459448,
+            "blockBias": 1.1293116543053894
+          }
+        },
+        {
+          "winRate": 0.646,
+          "result": {
+            "games": 500,
+            "playerWins": 323,
+            "aiWins": 177,
+            "totalMargin": 17543.399999999994
+          },
+          "challenger": {
+            "aggression": 0.9840426685964313,
+            "control": 1.2337423300076118,
+            "drawBias": 0.9051391291570738,
+            "mistakeRate": 0.03661170002256568,
+            "landLimit": 4.947431154258762,
+            "counterBias": 1.2964749258751789,
+            "stealBias": 1.4159573972344812,
+            "attackBias": 1.0104549007312793,
+            "blockBias": 1.258557636675625
+          }
+        },
+        {
+          "winRate": 0.634,
+          "result": {
+            "games": 500,
+            "playerWins": 317,
+            "aiWins": 183,
+            "totalMargin": 16945.800000000003
+          },
+          "challenger": {
+            "aggression": 1.06668675848562,
+            "control": 1.241040147665469,
+            "drawBias": 1.0376679706034067,
+            "mistakeRate": 0.03431919139350872,
+            "landLimit": 5.1090114351605065,
+            "counterBias": 1.3529220757888694,
+            "stealBias": 1.4179316136813787,
+            "attackBias": 1.1502782235356688,
+            "blockBias": 1.0467922983747193
+          }
+        }
+      ]
+    },
+    {
+      "generation": 5,
+      "result": {
+        "games": 500,
+        "playerWins": 322,
+        "aiWins": 178,
+        "totalMargin": 16847.899999999994
+      },
+      "winRate": 0.644,
+      "tested": 5,
+      "champion": {
+        "aggression": 0.9571239148621614,
+        "control": 1.2719255607586886,
+        "drawBias": 1.0175093049782742,
+        "mistakeRate": 0.03673808637020074,
+        "landLimit": 4.6413716077091465,
+        "counterBias": 1.2892624184709336,
+        "stealBias": 1.515470789802284,
+        "attackBias": 1.1550081890972936,
+        "blockBias": 1.1905947506470453
+      },
+      "challenger": {
+        "aggression": 0.9571239148621614,
+        "control": 1.2719255607586886,
+        "drawBias": 1.0175093049782742,
+        "mistakeRate": 0.03673808637020074,
+        "landLimit": 4.6413716077091465,
+        "counterBias": 1.2892624184709336,
+        "stealBias": 1.515470789802284,
+        "attackBias": 1.1550081890972936,
+        "blockBias": 1.1905947506470453
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.644,
+          "result": {
+            "games": 500,
+            "playerWins": 322,
+            "aiWins": 178,
+            "totalMargin": 16847.899999999994
+          },
+          "challenger": {
+            "aggression": 0.9571239148621614,
+            "control": 1.2719255607586886,
+            "drawBias": 1.0175093049782742,
+            "mistakeRate": 0.03673808637020074,
+            "landLimit": 4.6413716077091465,
+            "counterBias": 1.2892624184709336,
+            "stealBias": 1.515470789802284,
+            "attackBias": 1.1550081890972936,
+            "blockBias": 1.1905947506470453
+          }
+        },
+        {
+          "winRate": 0.622,
+          "result": {
+            "games": 500,
+            "playerWins": 311,
+            "aiWins": 189,
+            "totalMargin": 17583.5
+          },
+          "challenger": {
+            "aggression": 1.0755806901880398,
+            "control": 1.2821508648717677,
+            "drawBias": 1.007245641652981,
+            "mistakeRate": 0.028479549359778575,
+            "landLimit": 4.710104958983134,
+            "counterBias": 1.3262222305205749,
+            "stealBias": 1.4580062516735144,
+            "attackBias": 1.074799647542838,
+            "blockBias": 1.2371661124895725
+          }
+        },
+        {
+          "winRate": 0.554,
+          "result": {
+            "games": 500,
+            "playerWins": 277,
+            "aiWins": 223,
+            "totalMargin": 15843.399999999996
+          },
+          "challenger": {
+            "aggression": 1.1107403619318292,
+            "control": 1.0996102151750031,
+            "drawBias": 0.9485132559036125,
+            "mistakeRate": 0.043357673109528844,
+            "landLimit": 4.916555377394679,
+            "counterBias": 1.2850109719599474,
+            "stealBias": 1.450673576288594,
+            "attackBias": 1.0311381625865046,
+            "blockBias": 1.0556372344002096
+          }
+        }
+      ]
+    },
+    {
+      "generation": 6,
+      "result": {
+        "games": 500,
+        "playerWins": 374,
+        "aiWins": 126,
+        "totalMargin": 17258.200000000004
+      },
+      "winRate": 0.748,
+      "tested": 5,
+      "champion": {
+        "aggression": 1.0722787702197558,
+        "control": 1.3449034801945237,
+        "drawBias": 0.9309784784702291,
+        "mistakeRate": 0.04888222106585765,
+        "landLimit": 4.646807268345834,
+        "counterBias": 1.3421872873038092,
+        "stealBias": 1.4767710739784792,
+        "attackBias": 1.2614126006264,
+        "blockBias": 1.2268503156533164
+      },
+      "challenger": {
+        "aggression": 1.0722787702197558,
+        "control": 1.3449034801945237,
+        "drawBias": 0.9309784784702291,
+        "mistakeRate": 0.04888222106585765,
+        "landLimit": 4.646807268345834,
+        "counterBias": 1.3421872873038092,
+        "stealBias": 1.4767710739784792,
+        "attackBias": 1.2614126006264,
+        "blockBias": 1.2268503156533164
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.748,
+          "result": {
+            "games": 500,
+            "playerWins": 374,
+            "aiWins": 126,
+            "totalMargin": 17258.200000000004
+          },
+          "challenger": {
+            "aggression": 1.0722787702197558,
+            "control": 1.3449034801945237,
+            "drawBias": 0.9309784784702291,
+            "mistakeRate": 0.04888222106585765,
+            "landLimit": 4.646807268345834,
+            "counterBias": 1.3421872873038092,
+            "stealBias": 1.4767710739784792,
+            "attackBias": 1.2614126006264,
+            "blockBias": 1.2268503156533164
+          }
+        },
+        {
+          "winRate": 0.644,
+          "result": {
+            "games": 500,
+            "playerWins": 322,
+            "aiWins": 178,
+            "totalMargin": 16582.200000000004
+          },
+          "challenger": {
+            "aggression": 0.8389547345566037,
+            "control": 1.2298079465389424,
+            "drawBias": 0.9385611082845715,
+            "mistakeRate": 0.04531779202910201,
+            "landLimit": 4.598438660664427,
+            "counterBias": 1.383412717026417,
+            "stealBias": 1.623213369448647,
+            "attackBias": 1.1973392169451667,
+            "blockBias": 1.227377325104749
+          }
+        },
+        {
+          "winRate": 0.598,
+          "result": {
+            "games": 500,
+            "playerWins": 299,
+            "aiWins": 201,
+            "totalMargin": 16348.5
+          },
+          "challenger": {
+            "aggression": 0.9494043928342424,
+            "control": 1.3096323686623603,
+            "drawBias": 1.094251858182848,
+            "mistakeRate": 0.030939826558679374,
+            "landLimit": 4.859376388587596,
+            "counterBias": 1.2305374444276627,
+            "stealBias": 1.6132246999405695,
+            "attackBias": 1.1471567079191656,
+            "blockBias": 1.1474299030729915
+          }
+        }
+      ]
+    },
+    {
+      "generation": 7,
+      "result": {
+        "games": 500,
+        "playerWins": 332,
+        "aiWins": 168,
+        "totalMargin": 15627.200000000004
+      },
+      "winRate": 0.664,
+      "tested": 5,
+      "champion": {
+        "aggression": 1.188098965378006,
+        "control": 1.4372501622351321,
+        "drawBias": 0.8879819890126391,
+        "mistakeRate": 0.05998597449382291,
+        "landLimit": 4.805701109958583,
+        "counterBias": 1.3697801192523202,
+        "stealBias": 1.3860765211639454,
+        "attackBias": 1.2938487899247622,
+        "blockBias": 1.1377291751010485
+      },
+      "challenger": {
+        "aggression": 1.188098965378006,
+        "control": 1.4372501622351321,
+        "drawBias": 0.8879819890126391,
+        "mistakeRate": 0.05998597449382291,
+        "landLimit": 4.805701109958583,
+        "counterBias": 1.3697801192523202,
+        "stealBias": 1.3860765211639454,
+        "attackBias": 1.2938487899247622,
+        "blockBias": 1.1377291751010485
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.664,
+          "result": {
+            "games": 500,
+            "playerWins": 332,
+            "aiWins": 168,
+            "totalMargin": 15627.200000000004
+          },
+          "challenger": {
+            "aggression": 1.188098965378006,
+            "control": 1.4372501622351321,
+            "drawBias": 0.8879819890126391,
+            "mistakeRate": 0.05998597449382291,
+            "landLimit": 4.805701109958583,
+            "counterBias": 1.3697801192523202,
+            "stealBias": 1.3860765211639454,
+            "attackBias": 1.2938487899247622,
+            "blockBias": 1.1377291751010485
+          }
+        },
+        {
+          "winRate": 0.63,
+          "result": {
+            "games": 500,
+            "playerWins": 315,
+            "aiWins": 185,
+            "totalMargin": 16294.599999999995
+          },
+          "challenger": {
+            "aggression": 1.1270147885656225,
+            "control": 1.4613556985888996,
+            "drawBias": 0.8879386157470399,
+            "mistakeRate": 0.038245515697609124,
+            "landLimit": 4.799963409536219,
+            "counterBias": 1.3873777339546711,
+            "stealBias": 1.5129244047276946,
+            "attackBias": 1.1893735976754871,
+            "blockBias": 1.2287562937930934
+          }
+        },
+        {
+          "winRate": 0.618,
+          "result": {
+            "games": 500,
+            "playerWins": 309,
+            "aiWins": 191,
+            "totalMargin": 15853
+          },
+          "challenger": {
+            "aggression": 1.0655582493430937,
+            "control": 1.252947841979177,
+            "drawBias": 0.8730227069176774,
+            "mistakeRate": 0.03705851146871859,
+            "landLimit": 4.65887641557672,
+            "counterBias": 1.296654255372598,
+            "stealBias": 1.3842749347961594,
+            "attackBias": 1.2340528115564278,
+            "blockBias": 1.14508759086825
+          }
+        }
+      ]
+    },
+    {
+      "generation": 8,
+      "result": {
+        "games": 500,
+        "playerWins": 343,
+        "aiWins": 157,
+        "totalMargin": 15996.099999999999
+      },
+      "winRate": 0.686,
+      "tested": 5,
+      "champion": {
+        "aggression": 1.1615270128435644,
+        "control": 1.4951709680087728,
+        "drawBias": 0.9318183475186061,
+        "mistakeRate": 0.050333552472593544,
+        "landLimit": 4.839072141926775,
+        "counterBias": 1.4011416969184927,
+        "stealBias": 1.4277603398714842,
+        "attackBias": 1.3904036648806264,
+        "blockBias": 1.2422874736130924
+      },
+      "challenger": {
+        "aggression": 1.1615270128435644,
+        "control": 1.4951709680087728,
+        "drawBias": 0.9318183475186061,
+        "mistakeRate": 0.050333552472593544,
+        "landLimit": 4.839072141926775,
+        "counterBias": 1.4011416969184927,
+        "stealBias": 1.4277603398714842,
+        "attackBias": 1.3904036648806264,
+        "blockBias": 1.2422874736130924
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.686,
+          "result": {
+            "games": 500,
+            "playerWins": 343,
+            "aiWins": 157,
+            "totalMargin": 15996.099999999999
+          },
+          "challenger": {
+            "aggression": 1.1615270128435644,
+            "control": 1.4951709680087728,
+            "drawBias": 0.9318183475186061,
+            "mistakeRate": 0.050333552472593544,
+            "landLimit": 4.839072141926775,
+            "counterBias": 1.4011416969184927,
+            "stealBias": 1.4277603398714842,
+            "attackBias": 1.3904036648806264,
+            "blockBias": 1.2422874736130924
+          }
+        },
+        {
+          "winRate": 0.618,
+          "result": {
+            "games": 500,
+            "playerWins": 309,
+            "aiWins": 191,
+            "totalMargin": 15590.600000000002
+          },
+          "challenger": {
+            "aggression": 1.087234465104057,
+            "control": 1.454532223822158,
+            "drawBias": 0.9076842326138242,
+            "mistakeRate": 0.04857489913634257,
+            "landLimit": 4.585818475911033,
+            "counterBias": 1.415376709485198,
+            "stealBias": 1.3210763616880798,
+            "attackBias": 1.1975313249353665,
+            "blockBias": 1.0896227812190877
+          }
+        },
+        {
+          "winRate": 0.614,
+          "result": {
+            "games": 500,
+            "playerWins": 307,
+            "aiWins": 193,
+            "totalMargin": 15325.400000000001
+          },
+          "challenger": {
+            "aggression": 1.1985797449223323,
+            "control": 1.376522620729945,
+            "drawBias": 0.9264316915046702,
+            "mistakeRate": 0.05579672105142518,
+            "landLimit": 4.9658095111865155,
+            "counterBias": 1.3358676226669022,
+            "stealBias": 1.325733211309681,
+            "attackBias": 1.3315023808519864,
+            "blockBias": 1.1749206744899143
+          }
+        }
+      ]
+    },
+    {
+      "generation": 9,
+      "result": {
+        "games": 500,
+        "playerWins": 344,
+        "aiWins": 156,
+        "totalMargin": 15561.100000000002
+      },
+      "winRate": 0.688,
+      "tested": 5,
+      "champion": {
+        "aggression": 1.2737388697558645,
+        "control": 1.4229703038006951,
+        "drawBias": 0.9013716825481985,
+        "mistakeRate": 0.05041668629744769,
+        "landLimit": 4.712680726281413,
+        "counterBias": 1.3790478771924863,
+        "stealBias": 1.3297026660548588,
+        "attackBias": 1.479399922713033,
+        "blockBias": 1.135771077195271
+      },
+      "challenger": {
+        "aggression": 1.2737388697558645,
+        "control": 1.4229703038006951,
+        "drawBias": 0.9013716825481985,
+        "mistakeRate": 0.05041668629744769,
+        "landLimit": 4.712680726281413,
+        "counterBias": 1.3790478771924863,
+        "stealBias": 1.3297026660548588,
+        "attackBias": 1.479399922713033,
+        "blockBias": 1.135771077195271
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.688,
+          "result": {
+            "games": 500,
+            "playerWins": 344,
+            "aiWins": 156,
+            "totalMargin": 15561.100000000002
+          },
+          "challenger": {
+            "aggression": 1.2737388697558645,
+            "control": 1.4229703038006951,
+            "drawBias": 0.9013716825481985,
+            "mistakeRate": 0.05041668629744769,
+            "landLimit": 4.712680726281413,
+            "counterBias": 1.3790478771924863,
+            "stealBias": 1.3297026660548588,
+            "attackBias": 1.479399922713033,
+            "blockBias": 1.135771077195271
+          }
+        },
+        {
+          "winRate": 0.66,
+          "result": {
+            "games": 500,
+            "playerWins": 330,
+            "aiWins": 170,
+            "totalMargin": 16262.800000000001
+          },
+          "challenger": {
+            "aggression": 1.1402799172349014,
+            "control": 1.5381107038781368,
+            "drawBias": 0.8814431574656101,
+            "mistakeRate": 0.06410173324317094,
+            "landLimit": 4.6148793289034105,
+            "counterBias": 1.3487282072131863,
+            "stealBias": 1.488674929942988,
+            "attackBias": 1.3259152839937618,
+            "blockBias": 1.2864985055512823
+          }
+        },
+        {
+          "winRate": 0.64,
+          "result": {
+            "games": 500,
+            "playerWins": 320,
+            "aiWins": 180,
+            "totalMargin": 15691.4
+          },
+          "challenger": {
+            "aggression": 1.1376734069414454,
+            "control": 1.449106980780939,
+            "drawBias": 0.9594195133612672,
+            "mistakeRate": 0.03679143284371435,
+            "landLimit": 4.998111429372937,
+            "counterBias": 1.3075206166501179,
+            "stealBias": 1.387521382647474,
+            "attackBias": 1.3844929727450284,
+            "blockBias": 1.164855264585865
+          }
+        }
+      ]
+    },
+    {
+      "generation": 10,
+      "result": {
+        "games": 500,
+        "playerWins": 345,
+        "aiWins": 155,
+        "totalMargin": 16904.100000000002
+      },
+      "winRate": 0.69,
+      "tested": 5,
+      "champion": {
+        "aggression": 1.31139176763602,
+        "control": 1.3389124119551166,
+        "drawBias": 0.856889065811332,
+        "mistakeRate": 0.036854223073730236,
+        "landLimit": 4.855394602236787,
+        "counterBias": 1.4097900561261172,
+        "stealBias": 1.3273032739889943,
+        "attackBias": 1.551065289800391,
+        "blockBias": 1.2102051649259509
+      },
+      "challenger": {
+        "aggression": 1.31139176763602,
+        "control": 1.3389124119551166,
+        "drawBias": 0.856889065811332,
+        "mistakeRate": 0.036854223073730236,
+        "landLimit": 4.855394602236787,
+        "counterBias": 1.4097900561261172,
+        "stealBias": 1.3273032739889943,
+        "attackBias": 1.551065289800391,
+        "blockBias": 1.2102051649259509
+      },
+      "topCandidates": [
+        {
+          "winRate": 0.69,
+          "result": {
+            "games": 500,
+            "playerWins": 345,
+            "aiWins": 155,
+            "totalMargin": 16904.100000000002
+          },
+          "challenger": {
+            "aggression": 1.31139176763602,
+            "control": 1.3389124119551166,
+            "drawBias": 0.856889065811332,
+            "mistakeRate": 0.036854223073730236,
+            "landLimit": 4.855394602236787,
+            "counterBias": 1.4097900561261172,
+            "stealBias": 1.3273032739889943,
+            "attackBias": 1.551065289800391,
+            "blockBias": 1.2102051649259509
+          }
+        },
+        {
+          "winRate": 0.676,
+          "result": {
+            "games": 500,
+            "playerWins": 338,
+            "aiWins": 162,
+            "totalMargin": 16046.400000000001
+          },
+          "challenger": {
+            "aggression": 1.2874166635831208,
+            "control": 1.5107669305263283,
+            "drawBias": 0.8901440443947681,
+            "mistakeRate": 0.04888014485556308,
+            "landLimit": 4.669833296155838,
+            "counterBias": 1.4281411068495433,
+            "stealBias": 1.3157659559761035,
+            "attackBias": 1.4383828762301158,
+            "blockBias": 1.2389787359054576
+          }
+        },
+        {
+          "winRate": 0.646,
+          "result": {
+            "games": 500,
+            "playerWins": 323,
+            "aiWins": 177,
+            "totalMargin": 16938.699999999997
+          },
+          "challenger": {
+            "aggression": 1.3094870110704078,
+            "control": 1.3082950116248993,
+            "drawBias": 0.9572454528592301,
+            "mistakeRate": 0.04740470030699635,
+            "landLimit": 4.572206500225457,
+            "counterBias": 1.4692370309815546,
+            "stealBias": 1.2407540696257422,
+            "attackBias": 1.5266386994626786,
+            "blockBias": 1.07197293731705
+          }
+        }
+      ]
+    }
+  ]
+}
