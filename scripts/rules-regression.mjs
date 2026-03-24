@@ -40,6 +40,7 @@ const {
   CARDS,
   DANDAN_NAME,
   checkHasActions,
+  chooseAiAction,
   createGameReducer,
   initialState,
   isActivatable
@@ -59,7 +60,7 @@ const reducer = createGameReducer(effects);
 const getBlueSources = (card) => {
   if (!card.isLand) return 0;
   if (card.name === 'Haunted Fengraf') return 0;
-  if (['The Surgical Bay', 'Svyelunite Temple', 'Lonely Sandbar', 'Remote Isle'].includes(card.name)) return 1;
+  if (['The Surgical Bay', 'Svyelunite Temple', 'Lonely Sandbar', 'Remote Isle', 'Halimar Depths'].includes(card.name)) return 1;
   return card.type.includes('Island') ? 1 : 0;
 };
 
@@ -175,6 +176,25 @@ test('Halimar Depths reorder persists chosen top-to-bottom order', () => {
   expect(topThree.join(',') === 'top-b,top-a,top-c', `Unexpected Halimar top order: ${topThree.join(',')}`);
 });
 
+test('Halimar Depths taps for blue mana', () => {
+  const halimar = makeCard(CARDS.HALIMAR, { id: 'halimar-mana', tapped: false });
+  const brainstorm = makeCard(CARDS.BRAINSTORM, { id: 'halimar-brainstorm', owner: 'player' });
+
+  let state = makeState({
+    player: {
+      life: 20,
+      hand: [brainstorm],
+      board: [halimar],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'player', cardId: brainstorm.id });
+
+  expect(state.stack.some((entry) => entry.card.id === brainstorm.id), 'Halimar Depths could not pay for a blue spell');
+  expect(state.player.board.some((card) => card.id === halimar.id && card.tapped), 'Halimar Depths was not tapped to pay for blue mana');
+});
+
 test('cycling lands prompt for play or cycle when both are legal', () => {
   const sandbar = makeCard(CARDS.SANDBAR, { id: 'sandbar-1' });
   const island = makeCard(CARDS.ISLAND_1, { id: 'cycle-island' });
@@ -218,6 +238,56 @@ test('cycling from the prompt actually resolves, taps mana, and draws', () => {
   expect(state.graveyard.some((card) => card.id === sandbar.id), 'Cycled land did not go to the graveyard');
   expect(!state.player.hand.some((card) => card.id === sandbar.id), 'Cycled land stayed in hand');
   expect(state.player.hand.some((card) => card.id === drawCard.id), 'Cycling did not draw a replacement card');
+});
+
+test('AI Predict uses the actual top card instead of blind-guessing Dandan', () => {
+  const predict = makeCard(CARDS.PREDICT, { id: 'ai-predict', owner: 'ai' });
+  const topCard = makeCard(CARDS.BRAINSTORM, { id: 'predict-top' });
+  const drawOne = makeCard(CARDS.ISLAND_1, { id: 'predict-draw-one', owner: 'ai' });
+  const drawTwo = makeCard(CARDS.ACCUMULATED_KNOWLEDGE, { id: 'predict-draw-two', owner: 'ai' });
+
+  let state = makeState({
+    turn: 'ai',
+    priority: null,
+    stackResolving: true,
+    deck: [drawOne, drawTwo, topCard],
+    stack: [{ card: predict, controller: 'ai', target: null }],
+    ai: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.ai.hand.length === 2, `AI Predict should have drawn 2 cards on a known hit, got ${state.ai.hand.length}`);
+  expect(state.graveyard.some((card) => card.id === topCard.id), 'Predict did not mill the known top card');
+});
+
+test('direct land activation works for AI-only actions', () => {
+  const surgicalBay = makeCard(CARDS.SURGICAL_BAY, { id: 'ai-bay' });
+  const island = makeCard(CARDS.ISLAND_1, { id: 'ai-bay-fuel' });
+  const drawCard = makeCard(CARDS.TELLING_TIME, { id: 'ai-bay-draw', owner: 'ai' });
+
+  let state = makeState({
+    turn: 'ai',
+    priority: 'ai',
+    deck: [drawCard],
+    ai: {
+      life: 20,
+      hand: [],
+      board: [surgicalBay, island],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'ACTIVATE_LAND_NOW', player: 'ai', cardId: surgicalBay.id, cardName: surgicalBay.name });
+
+  expect(state.ai.hand.some((card) => card.id === drawCard.id), 'AI land activation did not draw a card');
+  expect(state.graveyard.some((card) => card.id === surgicalBay.id), 'Activated Surgical Bay did not go to the graveyard');
+  expect(state.priority === 'ai', `AI should keep priority after direct land activation, got ${state.priority}`);
 });
 
 test('Svyelunite Temple sacrifices for {U}{U} and that mana can be spent this phase', () => {
@@ -309,6 +379,74 @@ test('declared attackers can be toggled off before combat is confirmed', () => {
   const deselected = state.player.board.find((card) => card.id === dandan.id);
   expect(deselected.attacking === false, 'Dandan could not be deselected as an attacker');
   expect(deselected.tapped === false, 'Deselected Dandan should remain untapped');
+});
+
+test('AI always declares a legal Dandan attack when combat is open', () => {
+  const aiDandan = makeCard(CARDS.DANDAN, {
+    id: 'ai-attacker',
+    owner: 'ai',
+    summoningSickness: false
+  });
+  const aiIsland = makeCard(CARDS.ISLAND_1, { id: 'ai-attack-island' });
+  const playerIsland = makeCard(CARDS.ISLAND_2, { id: 'player-attack-island' });
+
+  const state = makeState({
+    turn: 'ai',
+    phase: 'declare_attackers',
+    priority: 'ai',
+    ai: {
+      life: 20,
+      hand: [],
+      board: [aiDandan, aiIsland],
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [playerIsland],
+      landsPlayed: 0
+    }
+  });
+
+  const action = chooseAiAction(state, 'ai');
+  expect(action.type === 'TOGGLE_ATTACK', `AI should declare attack, got ${action.type}`);
+  expect(action.cardId === aiDandan.id, 'AI did not choose its legal Dandan attacker');
+});
+
+test('declare attackers step auto-enforces mandatory Dandan attacks', () => {
+  const dandan = makeCard(CARDS.DANDAN, {
+    id: 'forced-attacker',
+    owner: 'player',
+    summoningSickness: false
+  });
+  const playerIsland = makeCard(CARDS.ISLAND_1, { id: 'forced-player-island' });
+  const opponentIsland = makeCard(CARDS.ISLAND_2, { id: 'forced-opponent-island' });
+  const blockerWindowSpell = makeCard(CARDS.BRAINSTORM, { id: 'forced-blocker-window', owner: 'ai' });
+
+  let state = makeState({
+    turn: 'player',
+    phase: 'declare_attackers',
+    priority: 'player',
+    player: {
+      life: 20,
+      hand: [],
+      board: [dandan, playerIsland],
+      landsPlayed: 0
+    },
+    ai: {
+      life: 20,
+      hand: [blockerWindowSpell],
+      board: [opponentIsland],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'NEXT_PHASE' });
+
+  const attackingDandan = state.player.board.find((card) => card.id === dandan.id);
+  expect(state.ai.life === 16, `Forced Dandan attack should have connected for 4 damage, got AI life ${state.ai.life}`);
+  expect(attackingDandan?.tapped === true, 'Forced attacker should be tapped after combat resolves');
+  expect(state.hasAttacked.player === true, 'Forced combat should count as an attack for the turn');
 });
 
 test('Control Magic steals a Dandan without gaining creature summoning sickness itself', () => {

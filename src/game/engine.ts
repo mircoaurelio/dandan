@@ -80,7 +80,7 @@ const EMPTY_MANA_POOL = { total: 0, blue: 0 };
 const getBlueSources = (card) => {
   if (!card.isLand) return 0;
   if (card.name === 'Haunted Fengraf') return 0;
-  if (card.name === 'The Surgical Bay' || card.name === 'Svyelunite Temple' || card.name === 'Lonely Sandbar' || card.name === 'Remote Isle') return 1;
+  if (card.name === 'The Surgical Bay' || card.name === 'Svyelunite Temple' || card.name === 'Lonely Sandbar' || card.name === 'Remote Isle' || card.name === 'Halimar Depths') return 1;
   return card.type.includes('Island') ? 1 : 0;
 };
 
@@ -459,16 +459,194 @@ export const checkHasActions = (s, p) => {
 };
 
 const shouldMakeMistake = (rate, policy) => Math.random() < Math.max(rate, policy?.mistakeRate ?? 0);
-export const pickAiPendingCards = (hand, count, policy) => {
-  const preferKeepingLands = hand.filter(card => card.isLand).length < Math.ceil(policy.landLimit ?? 4);
-  return [...hand]
-    .sort((a, b) => {
-      const aScore = (a.isLand ? (preferKeepingLands ? 8 : -4) : 0) - a.cost * (policy.control > policy.aggression ? 0.6 : 0.2);
-      const bScore = (b.isLand ? (preferKeepingLands ? 8 : -4) : 0) - b.cost * (policy.control > policy.aggression ? 0.6 : 0.2);
-      return aScore - bScore;
-    })
-    .slice(0, count)
-    .map(card => card.id);
+const HIGH_IMPACT_SPELLS = new Set([DANDAN_NAME, 'Control Magic', 'Capture of Jingzhou', "Day's Undoing"]);
+const BASE_CARD_VALUES = {
+  [DANDAN_NAME]: 11,
+  'Accumulated Knowledge': 6,
+  'Magical Hack': 4,
+  'Memory Lapse': 8,
+  'Mystic Sanctuary': 6,
+  'Island': 5,
+  'Brainstorm': 7,
+  'Capture of Jingzhou': 9,
+  'Chart a Course': 6,
+  'Control Magic': 10,
+  'Crystal Spray': 5,
+  "Day's Undoing": 5,
+  'Mental Note': 5,
+  'Metamorphose': 7,
+  'Predict': 8,
+  'Telling Time': 7,
+  'Unsubstantiate': 7,
+  'Halimar Depths': 6,
+  'Haunted Fengraf': 3,
+  'Lonely Sandbar': 4,
+  'Remote Isle': 3,
+  'The Surgical Bay': 4,
+  'Svyelunite Temple': 4
+};
+const getBaseCardValue = (card) => BASE_CARD_VALUES[card?.name] ?? (card?.isLand ? 4 : 2);
+const getTopDeckCard = (state, offset = 0) => {
+  const index = state.deck.length - 1 - offset;
+  return index >= 0 ? state.deck[index] : null;
+};
+const getTopDeckCards = (state, count) => Array.from({ length: Math.max(0, Math.min(count, state.deck.length)) }, (_unused, index) => getTopDeckCard(state, index)).filter(Boolean);
+const canPayCardNow = (state, actor, card, board = state[actor].board, pool = getManaPool(state, actor)) => Boolean(card) && canPayCost(board, pool, card.cost, card.blueRequirement || 0);
+const canLikelyCastNextTurn = (state, actor, card) => {
+  if (!card) return false;
+  if (card.isLand || (!card.isInstant && state.turn !== actor)) {
+    const total = state[actor].board.filter(permanent => permanent.isLand).length;
+    const blue = state[actor].board.filter(permanent => permanent.isLand && (permanent.blueSources || 0) > 0).length;
+    return total >= card.cost && blue >= (card.blueRequirement || 0);
+  }
+  return canPayCardNow(state, actor, card);
+};
+const getLiveInteractionCards = (state, actor, names) => state[actor].hand.filter(card => names.includes(card.name) && card.isInstant && canPayCardNow(state, actor, card));
+const hasLiveInteraction = (state, actor, names) => getLiveInteractionCards(state, actor, names).length > 0;
+const getHandQuality = (state, actor) => state[actor].hand.reduce((sum, card) => sum + getBaseCardValue(card), 0);
+const wantsPredictSetup = (state, actor) => state[actor].hand.some(card => card.name === 'Predict') && state.deck.length > 0;
+const getAiCardValue = (state, actor, card, policy) => {
+  if (!card) return Number.NEGATIVE_INFINITY;
+
+  const opponent = actor === 'player' ? 'ai' : 'player';
+  const landsInPlay = state[actor].board.filter(permanent => permanent.isLand).length;
+  const spareLands = state[actor].hand.filter(permanent => permanent.isLand).length;
+  const actorHasIsland = controlsIsland(state[actor].board);
+  const opponentHasIsland = controlsIsland(state[opponent].board);
+  const actorCounters = getLiveInteractionCards(state, actor, ['Memory Lapse', 'Unsubstantiate']).length;
+  const opponentCounters = getLiveInteractionCards(state, opponent, ['Memory Lapse', 'Unsubstantiate']).length;
+  const supportedOpponentDandans = countDandans(state[opponent].board, permanent => isDandanSupported(permanent, state[opponent].board));
+  const graveAkCount = state.graveyard.filter(permanent => permanent.name === 'Accumulated Knowledge').length;
+  const topCards = getTopDeckCards(state, 3);
+  const lowValueTopCards = topCards.filter(topCard => getBaseCardValue(topCard) <= 4).length;
+  let score = getBaseCardValue(card);
+
+  if (card.isLand) {
+    score += landsInPlay < 3 ? 4.5 : landsInPlay < 5 ? 2.2 : 0.4;
+    if (spareLands > 2) score -= 2.5;
+    if (card.name === 'Mystic Sanctuary' && state.graveyard.some(permanent => INSTANT_OR_SORCERY_TYPES.some(type => permanent.type?.includes(type)))) score += 2;
+    if (card.name === 'Halimar Depths') score += 1.2;
+    if (card.name === 'The Surgical Bay' && state[actor].hand.length <= 3) score += 1.5;
+    if (card.name === 'Haunted Fengraf' && !state.graveyard.some(isCreatureCard)) score -= 2.5;
+    if ((card.blueSources || 0) === 0 && state[actor].hand.some(spell => !spell.isLand && (spell.blueRequirement || 0) > 1)) score -= 2;
+    return score;
+  }
+
+  switch (card.name) {
+    case DANDAN_NAME:
+      score += actorHasIsland && opponentHasIsland ? 4.5 : actorHasIsland ? 1.5 : -4.5;
+      score += state[opponent].life <= 8 ? 3.5 : 0;
+      score += state[actor].hand.filter(permanent => permanent.name === DANDAN_NAME).length > 1 ? 1.2 : 0;
+      score += actorCounters > 0 ? 1.5 : 0;
+      score -= opponentCounters > actorCounters ? 3.5 : 0;
+      score -= state[opponent].hand.some(permanent => permanent.name === 'Control Magic' && canLikelyCastNextTurn(state, opponent, permanent)) ? 2 : 0;
+      break;
+    case 'Memory Lapse':
+      score += state[opponent].hand.some(permanent => HIGH_IMPACT_SPELLS.has(permanent.name) && canLikelyCastNextTurn(state, opponent, permanent)) ? 4 : 1.5;
+      break;
+    case 'Unsubstantiate':
+      score += state[opponent].hand.some(permanent => HIGH_IMPACT_SPELLS.has(permanent.name) && canLikelyCastNextTurn(state, opponent, permanent)) ? 3.5 : 1.2;
+      score += supportedOpponentDandans > 0 ? 2 : 0;
+      break;
+    case 'Control Magic':
+      score += supportedOpponentDandans * 3.2;
+      break;
+    case 'Capture of Jingzhou':
+      score += landsInPlay >= 5 ? 4 : 0;
+      score += countDandans(state[actor].board, permanent => isDandanSupported(permanent, state[actor].board)) > 0 ? 2 : 0;
+      score += state[opponent].life <= 8 ? 2.5 : 0;
+      break;
+    case "Day's Undoing":
+      score += Math.max(0, state[opponent].hand.length - state[actor].hand.length) * 1.8;
+      score += state[actor].hand.length <= 2 ? 3.5 : 0;
+      score -= state[actor].hand.length >= 5 ? 4.5 : 0;
+      score -= getHandQuality(state, actor) > getHandQuality(state, opponent) ? 2.5 : 0;
+      break;
+    case 'Accumulated Knowledge':
+      score += graveAkCount * 2.2;
+      break;
+    case 'Predict':
+      score += state.deck.length > 0 ? 4 : -8;
+      score += wantsPredictSetup(state, actor) ? 1.2 : 0;
+      break;
+    case 'Brainstorm':
+      score += state.deck.length >= 2 ? 2.2 : 0;
+      score += wantsPredictSetup(state, actor) ? 2.4 : 0;
+      break;
+    case 'Telling Time':
+      score += state.deck.length >= 3 ? 2.5 : state.deck.length;
+      score += wantsPredictSetup(state, actor) ? 1.6 : 0;
+      break;
+    case 'Mental Note':
+      score += lowValueTopCards * 1.8;
+      score += graveAkCount * 0.8;
+      break;
+    case 'Chart a Course':
+      score += state.hasAttacked[actor] ? 2.4 : -0.8;
+      break;
+    case 'Magical Hack':
+    case 'Crystal Spray':
+      score += (pickTransformTarget(state, actor)?.score || 0) * 0.55;
+      break;
+    case 'Metamorphose':
+      score += (pickBounceTarget(state, actor)?.score || 0) * 0.5;
+      break;
+    default:
+      break;
+  }
+
+  return score;
+};
+const getAiLibraryOrder = (state, actor, cards, policy) => {
+  const scored = [...cards].map(card => ({ card, score: getAiCardValue(state, actor, card, policy) }));
+  if (scored.length <= 1) return scored.map(entry => entry.card);
+  if (wantsPredictSetup(state, actor)) {
+    const ascending = [...scored].sort((left, right) => left.score - right.score || left.card.cost - right.card.cost);
+    const [predictFood, ...rest] = ascending;
+    return [predictFood.card, ...rest.sort((left, right) => right.score - left.score || right.card.cost - left.card.cost).map(entry => entry.card)];
+  }
+  return scored.sort((left, right) => right.score - left.score || left.card.cost - right.card.cost).map(entry => entry.card);
+};
+const getAiPutBackCards = (state, actor, count, policy) => {
+  const chosen = [...state[actor].hand]
+    .sort((left, right) => getAiCardValue(state, actor, left, policy) - getAiCardValue(state, actor, right, policy) || left.cost - right.cost)
+    .slice(0, count);
+
+  if (chosen.length <= 1) return chosen;
+  if (wantsPredictSetup(state, actor)) {
+    const ascending = [...chosen].sort((left, right) => getAiCardValue(state, actor, left, policy) - getAiCardValue(state, actor, right, policy) || left.cost - right.cost);
+    return [...ascending.slice(1), ascending[0]];
+  }
+
+  return chosen;
+};
+const getAiTellingTimePlan = (state, actor, cards, policy) => {
+  const ordered = [...cards].sort((left, right) => getAiCardValue(state, actor, right, policy) - getAiCardValue(state, actor, left, policy) || left.cost - right.cost);
+  const handCard = ordered[0] || null;
+  const remaining = ordered.slice(1);
+  if (remaining.length === 0) return { handCard, topCard: null, bottomCard: null };
+  if (wantsPredictSetup(state, actor)) {
+    const ascending = [...remaining].sort((left, right) => getAiCardValue(state, actor, left, policy) - getAiCardValue(state, actor, right, policy) || left.cost - right.cost);
+    return {
+      handCard,
+      topCard: ascending[0] || null,
+      bottomCard: ascending[1] || null
+    };
+  }
+  return {
+    handCard,
+    topCard: remaining[0] || null,
+    bottomCard: remaining[1] || null
+  };
+};
+const getAiSanctuaryTarget = (state, actor, validSpells, policy) => [...validSpells]
+  .sort((left, right) => getAiCardValue(state, actor, right, policy) - getAiCardValue(state, actor, left, policy) || left.cost - right.cost)[0] || null;
+const getAiPredictGuess = (state) => getTopDeckCard(state)?.name || DANDAN_NAME;
+export const pickAiPendingCards = (state, actor, count, policy) => {
+  const chosen = [...state[actor].hand]
+    .sort((left, right) => getAiCardValue(state, actor, left, policy) - getAiCardValue(state, actor, right, policy) || left.cost - right.cost)
+    .slice(0, count);
+  return chosen.map(card => card.id);
 };
 export const getSpellPriority = (card, policy) => {
   switch (card.name) {
@@ -484,12 +662,50 @@ export const getSpellPriority = (card, policy) => {
     default: return card.name === DANDAN_NAME ? 6 + policy.aggression * 4 : 2;
   }
 };
+const getSpellContextScore = (state, actor, card, policy, difficulty = state.difficulty || 'medium') => {
+  const opponent = actor === 'player' ? 'ai' : 'player';
+  let score = getSpellPriority(card, policy) + getAiCardValue(state, actor, card, policy) * 0.55;
+
+  if (difficulty === 'hard' && !card.isLand && HIGH_IMPACT_SPELLS.has(card.name)) {
+    const opponentCounters = getLiveInteractionCards(state, opponent, ['Memory Lapse', 'Unsubstantiate']).length;
+    const actorCounters = getLiveInteractionCards(state, actor, ['Memory Lapse', 'Unsubstantiate']).length;
+    if (opponentCounters > actorCounters) score -= 3.5;
+  }
+
+  if (card.name === 'Predict' && getTopDeckCard(state)) score += 3;
+  if (card.name === 'Mental Note') score += getTopDeckCards(state, 2).filter(topCard => getBaseCardValue(topCard) <= 4).length * 1.2;
+  if (card.name === "Day's Undoing" && state[actor].hand.length >= 5 && getHandQuality(state, actor) >= getHandQuality(state, opponent)) score -= 6;
+
+  return score;
+};
 
 const AI_ETB_TAPPED_LANDS = new Set(['Lonely Sandbar', 'Remote Isle', 'The Surgical Bay', 'Svyelunite Temple', 'Halimar Depths', 'Mystic Sanctuary']);
 const AI_VALUE_INSTANTS = new Set(['Accumulated Knowledge', 'Brainstorm', 'Mental Note', 'Predict', 'Telling Time']);
 const countDandans = (board, predicate = (_card) => true) => board.filter(card => card.name === DANDAN_NAME && predicate(card)).length;
 const isDandanSupported = (card, board) => card?.name === DANDAN_NAME && boardHasLandType(board, getDandanLandType(card));
 export const canDandanAttackDefender = (card, defenderBoard) => card?.name === DANDAN_NAME && boardHasLandType(defenderBoard, getDandanLandType(card));
+const getMandatoryDandanAttackers = (state, actor) => {
+  const opponent = actor === 'player' ? 'ai' : 'player';
+  return state[actor].board.filter(card => (
+    card.name === DANDAN_NAME &&
+    !card.summoningSickness &&
+    !card.tapped &&
+    canDandanAttackDefender(card, state[opponent].board)
+  ));
+};
+const enforceMandatoryDandanAttacks = (state, actor) => {
+  const mandatoryIds = new Set(getMandatoryDandanAttackers(state, actor).map(card => card.id));
+  if (mandatoryIds.size === 0) return state;
+
+  let changed = false;
+  state[actor].board = state[actor].board.map(card => {
+    if (!mandatoryIds.has(card.id) || card.attacking) return card;
+    changed = true;
+    return { ...card, attacking: true };
+  });
+
+  return changed ? state : state;
+};
 const getBlueSourcesInPlay = (board) => board.filter(card => card.isLand && (card.blueSources || 0) > 0).length;
 const getCombatThreat = (defendingBoard, dandanCount) => controlsIsland(defendingBoard) ? dandanCount * 4 : 0;
 const getBoardAfterTransformingPermanent = (board, permanentId) => board.map(card => {
@@ -536,45 +752,9 @@ const chooseLandToPlay = (state, actor) => {
 };
 
 const getDesiredAttackCount = (state, actor, policy) => {
-  const opponent = actor === 'player' ? 'ai' : 'player';
-  const readyAttackers = state[actor].board.filter(card => card.name === DANDAN_NAME && !card.summoningSickness && !card.tapped && !card.attacking && canDandanAttackDefender(card, state[opponent].board));
+  const readyAttackers = getMandatoryDandanAttackers(state, actor).filter(card => !card.attacking);
   if (readyAttackers.length === 0) return 0;
-
-  const ourDandans = countDandans(state[actor].board);
-  const opponentDandans = countDandans(state[opponent].board);
-  const opponentBlocks = countDandans(state[opponent].board, card => !card.tapped);
-  const options = [];
-
-  for (let attackers = 0; attackers <= readyAttackers.length; attackers++) {
-    const blocked = Math.min(attackers, opponentBlocks);
-    const damage = Math.max(0, attackers - blocked) * 4;
-    const opponentLifeAfter = state[opponent].life - damage;
-    const opponentSurvivors = Math.max(0, opponentDandans - blocked);
-    const ourAvailableBlocksNextTurn = Math.max(0, ourDandans - attackers);
-    const crackbackDamage = Math.max(0, opponentSurvivors - ourAvailableBlocksNextTurn) * 4;
-
-    options.push({
-      attackers,
-      damage,
-      opponentLifeAfter,
-      crackbackDamage,
-      winningNow: opponentLifeAfter <= 0,
-      score: damage * (1.55 + policy.attackBias * 0.18)
-        - crackbackDamage * (1.2 + policy.blockBias * 0.18)
-        - blocked * (0.45 + policy.control * 0.15)
-        - Math.max(0, attackers - 1) * 0.05
-    });
-  }
-
-  const lethal = options.filter(option => option.winningNow).sort((left, right) => left.attackers - right.attackers)[0];
-  if (lethal) return lethal.attackers;
-
-  const bestSafeRace = options
-    .filter(option => option.attackers > 0 && option.crackbackDamage < state[actor].life)
-    .sort((left, right) => right.score - left.score || right.damage - left.damage || left.attackers - right.attackers)[0];
-
-  if (bestSafeRace && bestSafeRace.score > 0.25) return bestSafeRace.attackers;
-  return 0;
+  return readyAttackers.length + state[actor].board.filter(card => card.name === DANDAN_NAME && card.attacking).length;
 };
 
 const getDesiredBlockCount = (state, actor, policy) => {
@@ -708,13 +888,55 @@ const shouldHoldValueInstant = (state, actor, card) => {
   if (state.turn !== actor) return !(state.phase === 'main2' || state.phase === 'cleanup');
   return state[actor].hand.length <= 7;
 };
+const shouldCastDandanNow = (state, actor, policy, difficulty = state.difficulty || 'medium') => {
+  const dandan = state[actor].hand.find(card => card.name === DANDAN_NAME);
+  if (!dandan) return false;
+  if (!controlsIsland(state[actor].board) || !controlsIsland(state[actor === 'player' ? 'ai' : 'player'].board)) return false;
+  return getSpellContextScore(state, actor, dandan, policy, difficulty) >= (difficulty === 'hard' ? 11.5 : 9.5);
+};
+const getTempleActivationAction = (state, actor, policy, difficulty = state.difficulty || 'medium') => {
+  const temple = state[actor].board.find(card => card.name === 'Svyelunite Temple' && isActivatable(card, state, actor));
+  if (!temple || state.turn !== actor || !['main1', 'main2'].includes(state.phase)) return null;
+
+  const boardWithoutTemple = state[actor].board.filter(card => card.id !== temple.id);
+  const pool = getManaPool(state, actor);
+  const futurePool = { total: pool.total + 2, blue: pool.blue + 2 };
+  const enabledSpell = [...state[actor].hand]
+    .filter(card => !card.isLand && !canPayCardNow(state, actor, card) && canPayCardNow(state, actor, card, boardWithoutTemple, futurePool))
+    .sort((left, right) => getSpellContextScore(state, actor, right, policy, difficulty) - getSpellContextScore(state, actor, left, policy, difficulty))[0];
+
+  if (!enabledSpell) return null;
+  if (getSpellContextScore(state, actor, enabledSpell, policy, difficulty) < 10) return null;
+  return { type: 'ACTIVATE_LAND_NOW', player: actor, cardId: temple.id, cardName: temple.name };
+};
+const getAiLandActivationAction = (state, actor, policy, difficulty = state.difficulty || 'medium') => {
+  const templeActivation = getTempleActivationAction(state, actor, policy, difficulty);
+  if (templeActivation) return templeActivation;
+
+  const surgicalBay = state[actor].board.find(card => card.name === 'The Surgical Bay' && isActivatable(card, state, actor));
+  if (surgicalBay && (
+    (state.turn !== actor && (state.phase === 'main2' || state.phase === 'cleanup')) ||
+    (state.turn === actor && state.phase === 'main2' && state[actor].hand.length <= 2)
+  )) {
+    return { type: 'ACTIVATE_LAND_NOW', player: actor, cardId: surgicalBay.id, cardName: surgicalBay.name };
+  }
+
+  const fengraf = state[actor].board.find(card => card.name === 'Haunted Fengraf' && isActivatable(card, state, actor));
+  if (fengraf && !state[actor].hand.some(card => card.name === DANDAN_NAME) && (state[actor].hand.length === 0 || state[actor].life <= 8)) {
+    return { type: 'ACTIVATE_LAND_NOW', player: actor, cardId: fengraf.id, cardName: fengraf.name };
+  }
+
+  return null;
+};
 
 export const getAiPendingActions = (state, policy, actor = 'player') => {
   if (!state.pendingAction) return [];
 
   if (['BRAINSTORM', 'DISCARD', 'DISCARD_CLEANUP', 'MULLIGAN_BOTTOM'].includes(state.pendingAction.type)) {
     const count = state.pendingAction.count || 0;
-    const selected = pickAiPendingCards(state[actor].hand, count, policy);
+    const selected = state.pendingAction.type === 'BRAINSTORM'
+      ? getAiPutBackCards(state, actor, count, policy).map(card => card.id)
+      : pickAiPendingCards(state, actor, count, policy);
     return [
       ...selected.map(cardId => ({ type: 'TOGGLE_PENDING_SELECT', cardId })),
       { type: 'SUBMIT_PENDING_ACTION' }
@@ -722,12 +944,11 @@ export const getAiPendingActions = (state, policy, actor = 'player') => {
   }
 
   if (state.pendingAction.type === 'PREDICT') {
-    return [{ type: 'SUBMIT_PENDING_ACTION', guess: DANDAN_NAME }];
+    return [{ type: 'SUBMIT_PENDING_ACTION', guess: getAiPredictGuess(state) }];
   }
 
   if (state.pendingAction.type === 'TELLING_TIME') {
-    const ordered = [...state.pendingAction.cards].sort((a, b) => Number(b.isLand) - Number(a.isLand) || a.cost - b.cost);
-    const [handCard, topCard] = ordered;
+    const { handCard, topCard } = getAiTellingTimePlan(state, actor, state.pendingAction.cards, policy);
     const actions = [];
     if (handCard) actions.push({ type: 'UPDATE_TELLING_TIME', cardId: handCard.id, dest: 'hand' });
     if (topCard) actions.push({ type: 'UPDATE_TELLING_TIME', cardId: topCard.id, dest: 'top' });
@@ -736,11 +957,25 @@ export const getAiPendingActions = (state, policy, actor = 'player') => {
   }
 
   if (state.pendingAction.type === 'HALIMAR_DEPTHS') {
-    return [{ type: 'SUBMIT_PENDING_ACTION' }];
+    const desiredOrder = getAiLibraryOrder(state, actor, state.pendingAction.cards, policy);
+    const actions = [];
+    let working = [...state.pendingAction.cards];
+    desiredOrder.forEach((card, targetIndex) => {
+      const fromIndex = working.findIndex(entry => entry.id === card.id);
+      if (fromIndex > -1 && fromIndex !== targetIndex) {
+        actions.push({ type: 'REORDER_HALIMAR', from: fromIndex, to: targetIndex });
+        const [moved] = working.splice(fromIndex, 1);
+        working.splice(targetIndex, 0, moved);
+      }
+    });
+    actions.push({ type: 'SUBMIT_PENDING_ACTION' });
+    return actions;
   }
 
   if (state.pendingAction.type === 'MYSTIC_SANCTUARY') {
-    return [{ type: 'SUBMIT_PENDING_ACTION', selectedCardId: state.pendingAction.validTargets?.[0] || null }];
+    const validSpells = state.graveyard.filter(card => state.pendingAction.validTargets?.includes(card.id));
+    const spell = getAiSanctuaryTarget(state, actor, validSpells, policy);
+    return [{ type: 'SUBMIT_PENDING_ACTION', selectedCardId: spell?.id || null }];
   }
 
   if (state.pendingAction.type === 'ACTIVATE_LAND') {
@@ -753,11 +988,12 @@ export const getAiPendingActions = (state, policy, actor = 'player') => {
 export const chooseAiAction = (state, actor, difficulty = 'medium', policy = getLivePolicyWeights(difficulty)) => {
   const opponent = actor === 'player' ? 'ai' : 'player';
   const canCast = (card) => Boolean(card) && isCastable(card, state, actor);
+  const interactionPenalty = difficulty === 'hard' && hasLiveInteraction(state, opponent, ['Memory Lapse', 'Unsubstantiate']) && !hasLiveInteraction(state, actor, ['Memory Lapse', 'Unsubstantiate']) ? 3.2 : 0;
 
   if (state.turn !== actor && state.stack.length === 0 && (state.phase === 'main2' || state.phase === 'cleanup')) {
     const endStepInstants = state[actor].hand.filter(card => canCast(card) && card.isInstant && AI_VALUE_INSTANTS.has(card.name));
     if (endStepInstants.length > 0 && !shouldMakeMistake(0.04, policy)) {
-      const spell = [...endStepInstants].sort((left, right) => getSpellPriority(right, policy) - getSpellPriority(left, policy))[0];
+      const spell = [...endStepInstants].sort((left, right) => getSpellContextScore(state, actor, right, policy, difficulty) - getSpellContextScore(state, actor, left, policy, difficulty))[0];
       return { type: 'CAST_SPELL', player: actor, cardId: spell.id };
     }
   }
@@ -770,7 +1006,7 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
       }
 
       const lapse = state[actor].hand.find(c => c.name === 'Memory Lapse');
-      const lapseValue = getSpellPriority(topSpell.card, policy) + (state.turn === opponent ? 2.5 : 0);
+      const lapseValue = getSpellContextScore(state, actor, topSpell.card, policy, difficulty) + (state.turn === opponent ? 2.5 : 0);
       const shouldMemoryLapse =
         canCast(lapse) &&
         (
@@ -797,7 +1033,7 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
           topSpell.card.name === 'Control Magic' ||
           topSpell.card.name === 'Capture of Jingzhou' ||
           topSpell.card.name === "Day's Undoing" ||
-          getSpellPriority(topSpell.card, policy) >= 4.5
+          getSpellContextScore(state, actor, topSpell.card, policy, difficulty) >= 7
         );
 
       if (shouldUnsub) {
@@ -811,10 +1047,10 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
   }
 
   if (state.turn === actor && state.phase === 'declare_attackers') {
-    const readyDandans = state[actor].board.filter(c => c.name === DANDAN_NAME && !c.summoningSickness && !c.tapped && !c.attacking && canDandanAttackDefender(c, state[opponent].board));
+    const readyDandans = getMandatoryDandanAttackers(state, actor).filter(card => !card.attacking);
     const desiredAttackers = getDesiredAttackCount(state, actor, policy);
     const currentAttackers = state[actor].board.filter(c => c.name === DANDAN_NAME && c.attacking).length;
-    if (readyDandans.length > 0 && currentAttackers < desiredAttackers && !shouldMakeMistake(0.1, policy)) {
+    if (readyDandans.length > 0 && currentAttackers < desiredAttackers) {
       return { type: 'TOGGLE_ATTACK', cardId: readyDandans[0].id, player: actor };
     }
     return { type: 'PASS_PRIORITY', player: actor };
@@ -854,7 +1090,7 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
     const controlMagicTarget = pickControlMagicTarget(state, actor);
     if (state.phase !== 'upkeep' && canCast(controlMagic) && controlMagicTarget && policy.stealBias >= 0.72) {
       targetedOptions.push({
-        score: controlMagicTarget.score,
+        score: controlMagicTarget.score + getSpellContextScore(state, actor, controlMagic, policy, difficulty) - interactionPenalty,
         action: { type: 'CAST_SPELL', player: actor, cardId: controlMagic.id, target: controlMagicTarget.target }
       });
     }
@@ -863,7 +1099,7 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
     const bounceTarget = pickBounceTarget(state, actor);
     if (state.phase !== 'upkeep' && canCast(metamorphose) && bounceTarget && policy.control >= 0.42) {
       targetedOptions.push({
-        score: bounceTarget.score + 1.5,
+        score: bounceTarget.score + 1.5 + getSpellContextScore(state, actor, metamorphose, policy, difficulty) - interactionPenalty * 0.6,
         action: { type: 'CAST_SPELL', player: actor, cardId: metamorphose.id, target: bounceTarget.target }
       });
     }
@@ -873,7 +1109,7 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
       const target = pickTransformTarget(state, actor);
       if (state.phase === 'upkeep' || !canCast(spell) || !target || policy.control < 0.42) return;
       targetedOptions.push({
-        score: target.score + (name === 'Crystal Spray' ? 1.5 : 0),
+        score: target.score + (name === 'Crystal Spray' ? 1.5 : 0) + getSpellContextScore(state, actor, spell, policy, difficulty) - interactionPenalty * 0.4,
         action: { type: 'CAST_SPELL', player: actor, cardId: spell.id, target: target.target }
       });
     });
@@ -883,7 +1119,7 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
       return bestTargetedSpell.action;
     }
 
-    if (state.phase !== 'upkeep' && canCast(dandan) && actorHasIsland && opponentHasIsland && !shouldMakeMistake(0.06, policy)) {
+    if (state.phase !== 'upkeep' && canCast(dandan) && actorHasIsland && opponentHasIsland && shouldCastDandanNow(state, actor, policy, difficulty) && !shouldMakeMistake(0.06, policy)) {
       return { type: 'CAST_SPELL', player: actor, cardId: dandan.id };
     }
 
@@ -894,13 +1130,24 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
     const castableSpells = state[actor].hand.filter(c => !c.isLand && ![DANDAN_NAME, 'Memory Lapse', 'Unsubstantiate', 'Magical Hack', 'Crystal Spray', 'Control Magic', 'Metamorphose'].includes(c.name) && isCastable(c, state, actor) && !shouldHoldValueInstant(state, actor, c));
     if (castableSpells.length > 0) {
       const spell = difficulty === 'hard'
-        ? [...castableSpells].sort((a, b) => getSpellPriority(b, policy) - getSpellPriority(a, policy))[0]
+        ? [...castableSpells].sort((a, b) => getSpellContextScore(state, actor, b, policy, difficulty) - getSpellContextScore(state, actor, a, policy, difficulty))[0]
         : difficulty === 'easy'
           ? randomChoice(castableSpells)
           : castableSpells[0];
-      if (!shouldMakeMistake(0.08, policy)) {
+      const spellScore = getSpellContextScore(state, actor, spell, policy, difficulty);
+      const shouldHoldInteraction =
+        difficulty === 'hard' &&
+        hasLiveInteraction(state, actor, ['Memory Lapse', 'Unsubstantiate']) &&
+        state[opponent].hand.some(card => HIGH_IMPACT_SPELLS.has(card.name) && canLikelyCastNextTurn(state, opponent, card)) &&
+        spellScore < 10;
+      if (!shouldHoldInteraction && !shouldMakeMistake(0.08, policy)) {
         return { type: 'CAST_SPELL', player: actor, cardId: spell.id };
       }
+    }
+
+    const activationAction = getAiLandActivationAction(state, actor, policy, difficulty);
+    if (activationAction && !shouldMakeMistake(0.05, policy)) {
+      return activationAction;
     }
 
     const cycler = state[actor].hand.find(c => isCyclable(c, state, actor));
@@ -911,6 +1158,44 @@ export const chooseAiAction = (state, actor, difficulty = 'medium', policy = get
   }
 
   return { type: 'PASS_PRIORITY', player: actor };
+};
+const resolveLandActivation = (state, player, cardId, cardName, activation = getActivationDetails(cardName)) => {
+  const landIdx = state[player].board.findIndex(card => card.id === cardId);
+  if (landIdx === -1) return state;
+
+  const landToActivate = state[player].board[landIdx];
+  const activationState = { ...state, pendingAction: null };
+  if (!activation || !isActivatable(landToActivate, activationState, player)) return state;
+
+  let nextState = state;
+  const boardWithoutLand = nextState[player].board.filter(card => card.id !== cardId);
+  const activationPayment = spendMana(boardWithoutLand, getManaPool(nextState, player), activation.total, activation.blue);
+  nextState[player].board = activationPayment.board;
+  nextState.floatingMana[player] = activationPayment.pool;
+
+  const sacrificedLand = { ...landToActivate, tapped: true, attacking: false, blocking: false };
+  nextState.graveyard.push(sacrificedLand);
+
+  if (cardName === 'The Surgical Bay') {
+    drawCards(nextState, player, 1);
+  } else if (cardName === 'Svyelunite Temple') {
+    addFloatingMana(nextState, player, 2, 2);
+  } else if (cardName === 'Haunted Fengraf') {
+    const creatures = nextState.graveyard.filter(isCreatureCard);
+    if (creatures.length > 0) {
+      const randIdx = Math.floor(Math.random() * creatures.length);
+      const selectedCreature = creatures[randIdx];
+      nextState.graveyard = nextState.graveyard.filter(card => card.id !== selectedCreature.id);
+      selectedCreature.owner = player;
+      nextState[player].hand.push(selectedCreature);
+    }
+  }
+
+  nextState = checkStateBasedActions(nextState);
+  nextState.stackResolving = false;
+  nextState.priority = player;
+  nextState.consecutivePasses = 0;
+  return nextState;
 };
 
 const defaultEffects = {
@@ -1015,8 +1300,7 @@ export const createGameReducer = (effects = defaultEffects) => {
             if (action.player === 'player') {
                 s.pendingAction = { type: 'HALIMAR_DEPTHS', cards: viewed };
             } else {
-                viewed.sort((a, b) => a.isLand ? 1 : -1);
-                while(viewed.length) s.deck.push(viewed.pop());
+                getAiLibraryOrder(s, 'ai', viewed, getLivePolicyWeights(s.difficulty || 'medium')).slice().reverse().forEach(card => s.deck.push(card));
                 logAction(`AI reordered the top cards with Halimar Depths.`);
             }
         }
@@ -1029,10 +1313,12 @@ export const createGameReducer = (effects = defaultEffects) => {
                     if (action.player === 'player') {
                         s.pendingAction = { type: 'MYSTIC_SANCTUARY', validTargets: validSpells.map(c=>c.id) };
                     } else {
-                        const spell = validSpells[0];
-                        s.graveyard = s.graveyard.filter(c => c.id !== spell.id);
-                        s.deck.push(spell);
-                        logAction(`AI put ${spell.name} on top with Mystic Sanctuary.`);
+                        const spell = getAiSanctuaryTarget(s, 'ai', validSpells, getLivePolicyWeights(s.difficulty || 'medium'));
+                        if (spell) {
+                          s.graveyard = s.graveyard.filter(c => c.id !== spell.id);
+                          s.deck.push(spell);
+                          logAction(`AI put ${spell.name} on top with Mystic Sanctuary.`);
+                        }
                     }
                 }
             }
@@ -1045,10 +1331,11 @@ export const createGameReducer = (effects = defaultEffects) => {
       return checkStateBasedActions(s);
 
     case 'PROMPT_ACTIVATE_LAND':
+      const activationPlayer = action.player || 'player';
       const landActivation = getActivationDetails(action.cardName);
-      const promptLand = s.player.board.find(c => c.id === action.cardId);
-      if (!promptLand || !isActivatable(promptLand, s, 'player')) return s;
-      s.pendingAction = { type: 'ACTIVATE_LAND', cardId: action.cardId, cardName: action.cardName, activation: landActivation };
+      const promptLand = s[activationPlayer].board.find(c => c.id === action.cardId);
+      if (!promptLand || !isActivatable(promptLand, s, activationPlayer)) return s;
+      s.pendingAction = { type: 'ACTIVATE_LAND', player: activationPlayer, cardId: action.cardId, cardName: action.cardName, activation: landActivation };
       return s;
 
     case 'PROMPT_HAND_LAND_ACTION': {
@@ -1091,6 +1378,11 @@ export const createGameReducer = (effects = defaultEffects) => {
       logAction(`${p} cycled ${cycledCard.name}.`);
       return checkStateBasedActions(s);
     }
+
+    case 'ACTIVATE_LAND_NOW':
+      s = resolveLandActivation(s, action.player, action.cardId, action.cardName, getActivationDetails(action.cardName));
+      logAction(`${action.player} activated ${action.cardName}.`);
+      return s;
 
     case 'CANCEL_TARGETING':
       s.pendingTargetSelection = null;
@@ -1268,9 +1560,10 @@ export const createGameReducer = (effects = defaultEffects) => {
             s.stackResolving = false;
             return s;
         } else {
-            s.ai.hand.sort((a,b) => a.isLand === b.isLand ? 0 : a.isLand ? -1 : 1);
-            if(s.ai.hand.length) s.deck.push(s.ai.hand.shift());
-            if(s.ai.hand.length) s.deck.push(s.ai.hand.shift());
+            getAiPutBackCards(s, 'ai', 2, getLivePolicyWeights(s.difficulty || 'medium')).forEach(card => {
+              const idx = s.ai.hand.findIndex(entry => entry.id === card.id);
+              if (idx > -1) s.deck.push(s.ai.hand.splice(idx, 1)[0]);
+            });
         }
       }
       else if (spell.card.name === 'Chart a Course') {
@@ -1282,7 +1575,9 @@ export const createGameReducer = (effects = defaultEffects) => {
                 s.stackResolving = false;
                 return s;
             } else {
-                if(s.ai.hand.length) s.graveyard.push(s.ai.hand.shift());
+                const discardId = pickAiPendingCards(s, 'ai', 1, getLivePolicyWeights(s.difficulty || 'medium'))[0];
+                const discardIdx = s.ai.hand.findIndex(card => card.id === discardId);
+                if (discardIdx > -1) s.graveyard.push(s.ai.hand.splice(discardIdx, 1)[0]);
             }
         }
       }
@@ -1295,10 +1590,10 @@ export const createGameReducer = (effects = defaultEffects) => {
             s.stackResolving = false;
             return s;
         } else {
-            viewed.sort((a, b) => a.isLand ? -1 : 1);
-            if(viewed.length) s.deck.unshift(viewed.shift());
-            if(viewed.length) s.deck.push(viewed.shift());
-            if(viewed.length) { const c = viewed.shift(); c.owner = 'ai'; s.ai.hand.push(c); }
+            const { handCard, topCard, bottomCard } = getAiTellingTimePlan(s, 'ai', viewed, getLivePolicyWeights(s.difficulty || 'medium'));
+            if (bottomCard) s.deck.unshift(bottomCard);
+            if (topCard) s.deck.push(topCard);
+            if (handCard) { handCard.owner = 'ai'; s.ai.hand.push(handCard); }
         }
       }
       else if (spell.card.name === 'Predict') {
@@ -1308,10 +1603,11 @@ export const createGameReducer = (effects = defaultEffects) => {
             s.stackResolving = false;
             return s;
         } else {
+            const guess = getAiPredictGuess(s);
             const milled = s.deck.length ? s.deck.pop() : null;
             if (milled) {
                 s.graveyard.push(milled);
-                if(milled.name === 'DandÃ¢n') { drawCards(s, 'ai', 2); } 
+                if(milled.name === guess) { drawCards(s, 'ai', 2); } 
                 else { drawCards(s, 'ai', 1); }
             }
         }
@@ -1456,58 +1752,20 @@ export const createGameReducer = (effects = defaultEffects) => {
            });
            logAction(`You put ${s.pendingAction.count} card(s) on the bottom.`);
            s.phase = 'upkeep';
-       } else if (s.pendingAction.type === 'DISCARD_CLEANUP') {
-           s.pendingAction.selected.forEach(cardId => {
-               const idx = s.player.hand.findIndex(c => c.id === cardId);
-               if(idx > -1) s.graveyard.push(s.player.hand.splice(idx, 1)[0]);
-           });
-           logAction(`You discarded down to 7 cards.`);
-           s.pendingAction = null;
-           return reducer(s, { type: 'NEXT_TURN' });
-        } else if (s.pendingAction.type === 'ACTIVATE_LAND') {
-            const landIdx = s.player.board.findIndex(c => c.id === s.pendingAction.cardId);
-            if (landIdx > -1) {
-                const landToActivate = s.player.board[landIdx];
-                const activationState = { ...s, pendingAction: null };
-                if (!isActivatable(landToActivate, activationState, 'player')) {
-                    s.pendingAction = null;
-                    return s;
-                }
-
-                const activation = s.pendingAction.activation || getActivationDetails(s.pendingAction.cardName);
-                const boardWithoutLand = s.player.board.filter(c => c.id !== s.pendingAction.cardId);
-                const activationPayment = spendMana(boardWithoutLand, getManaPool(s, 'player'), activation.total, activation.blue);
-                s.player.board = activationPayment.board;
-                s.floatingMana.player = activationPayment.pool;
-
-                const sacrificedLand = { ...landToActivate, tapped: true, attacking: false, blocking: false };
-                s.graveyard.push(sacrificedLand);
-                
-                if (s.pendingAction.cardName === 'The Surgical Bay' || s.pendingAction.cardName === 'Svyelunite Temple') {
-                    if (s.pendingAction.cardName === 'The Surgical Bay') {
-                        drawCards(s, 'player', 1);
-                        logAction(`Sacrificed ${s.pendingAction.cardName} to draw a card.`);
-                    } else {
-                        addFloatingMana(s, 'player', 2, 2);
-                        logAction(`Sacrificed Svyelunite Temple to add {U}{U}.`);
-                    }
-               } else if (s.pendingAction.cardName === 'Haunted Fengraf') {
-                   const creatures = s.graveyard.filter(isCreatureCard);
-                   if (creatures.length > 0) {
-                        const randIdx = Math.floor(Math.random() * creatures.length);
-                        const selectedCreature = creatures[randIdx];
-                        s.graveyard = s.graveyard.filter(c => c.id !== selectedCreature.id);
-                        selectedCreature.owner = 'player';
-                        s.player.hand.push(selectedCreature);
-                        logAction(`Sacrificed Fengraf. Returned ${selectedCreature.name}.`);
-                    } else {
-                        logAction(`Sacrificed Fengraf, but there was no creature to return.`);
-                    }
-                 }
-            }
-        } else if (s.pendingAction.type === 'HAND_LAND_ACTION') {
+         } else if (s.pendingAction.type === 'DISCARD_CLEANUP') {
+            s.pendingAction.selected.forEach(cardId => {
+                const idx = s.player.hand.findIndex(c => c.id === cardId);
+                if(idx > -1) s.graveyard.push(s.player.hand.splice(idx, 1)[0]);
+            });
+            logAction(`You discarded down to 7 cards.`);
             s.pendingAction = null;
-        } else if (s.pendingAction.type === 'MYSTIC_SANCTUARY') {
+            return reducer(s, { type: 'NEXT_TURN' });
+         } else if (s.pendingAction.type === 'ACTIVATE_LAND') {
+             const targetPlayer = s.pendingAction.player || 'player';
+             s = resolveLandActivation(s, targetPlayer, s.pendingAction.cardId, s.pendingAction.cardName, s.pendingAction.activation || getActivationDetails(s.pendingAction.cardName));
+         } else if (s.pendingAction.type === 'HAND_LAND_ACTION') {
+             s.pendingAction = null;
+         } else if (s.pendingAction.type === 'MYSTIC_SANCTUARY') {
             if (action.selectedCardId) {
                const targetIdx = s.graveyard.findIndex(c => c.id === action.selectedCardId);
                if (targetIdx > -1) {
@@ -1540,6 +1798,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         s.phase = 'declare_attackers';
         s.priority = s.turn;
       } else if (s.phase === 'declare_attackers') {
+        s = enforceMandatoryDandanAttacks(s, s.turn);
         const attackers = s[s.turn].board.filter(c => c.attacking).length;
         if (attackers > 0) {
             s.phase = 'declare_blockers';
