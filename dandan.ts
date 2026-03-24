@@ -462,14 +462,24 @@ const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activ
 
 const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state, onZoom, onClick, subtleHighlight = false }) => {
   const sortedAuras = [...attachedAuras].sort((a, b) => (a.attachmentOrder || 0) - (b.attachmentOrder || 0));
+  const auraCount = sortedAuras.length;
 
   return (
-    <div className="relative shrink-0 w-[72px] h-[116px] sm:w-[90px] sm:h-[144px]">
+    <div
+      className="attached-permanent-stack relative shrink-0 h-[102px] sm:h-[126px]"
+      style={{
+        '--attached-count': `${auraCount}`
+      }}
+    >
       {sortedAuras.map((aura, index) => (
         <div
           key={aura.id}
-          className="absolute left-1/2 -translate-x-1/2"
-          style={{ top: `${14 + index * 10}px`, zIndex: 4 + index }}
+          className="attached-aura absolute top-0"
+          style={{
+            '--attached-index': `${auraCount - index - 1}`,
+            top: `${8 + index * 6}px`,
+            zIndex: 4 + index
+          }}
         >
           <Card
             card={aura}
@@ -481,7 +491,9 @@ const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state
           />
         </div>
       ))}
-      <div className="absolute left-1/2 top-0 -translate-x-1/2 z-20">
+      <div
+        className="attached-permanent absolute top-0 z-20"
+      >
         <Card
           card={permanent}
           zone="board"
@@ -511,6 +523,7 @@ export default function App() {
   const [viewingZone, setViewingZone] = useState(null); 
   const isAiMirror = state.gameMode === 'ai_vs_ai';
   const difficultySpeed = AI_SPEED[state.difficulty] || AI_SPEED.medium;
+  const opponentAvatarSrc = DIFFICULTY_ART[state.difficulty || selectedDifficulty] || DIFFICULTY_ART.medium;
 
   useEffect(() => { AudioEngine.muted = muted; }, [muted]);
 
@@ -1176,7 +1189,7 @@ export default function App() {
            {/* Opponent Avatar Badge */}
            <div className="absolute top-2 left-2 flex items-center gap-3 z-30 bg-slate-900/90 pr-4 pl-1 py-1 rounded-full border border-slate-700 shadow-xl">
               <div className="relative">
-                 <img src={CARDS.MEMORY_LAPSE.image} className="w-10 h-10 rounded-full object-cover border-2 border-red-900" alt="AI Avatar" />
+                 <img src={opponentAvatarSrc} className="w-10 h-10 rounded-full object-cover border-2 border-red-900" alt="AI Avatar" />
                  <div className="absolute -bottom-1 -right-1 bg-red-900 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full border border-red-500 shadow-lg">{state.ai.life}</div>
               </div>
               <div className="flex flex-col">

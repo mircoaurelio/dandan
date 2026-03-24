@@ -136,6 +136,21 @@ textarea,
   left: calc(var(--land-index, 0) * var(--land-step));
 }
 
+.attached-permanent-stack {
+  --attached-card-width: 64px;
+  --attached-step: 32px;
+  width: calc(var(--attached-card-width) + var(--attached-count, 0) * var(--attached-step));
+  min-width: calc(var(--attached-card-width) + var(--attached-count, 0) * var(--attached-step));
+}
+
+.attached-aura {
+  left: calc(var(--attached-index, 0) * var(--attached-step));
+}
+
+.attached-permanent {
+  left: calc(var(--attached-count, 0) * var(--attached-step));
+}
+
 .arena-pass-button,
 .arena-pass-button:focus,
 .arena-pass-button:focus-visible,
@@ -155,5 +170,10 @@ textarea,
     --land-card-width: 80px;
     --land-card-height: 112px;
     --land-step: var(--land-step-desktop, 40px);
+  }
+
+  .attached-permanent-stack {
+    --attached-card-width: 80px;
+    --attached-step: 40px;
   }
 }
