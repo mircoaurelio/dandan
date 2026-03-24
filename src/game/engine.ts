@@ -104,7 +104,7 @@ export const AI_CHARACTERS = [
     id: 'tortoise',
     name: 'The Tortoise',
     title: 'The Shoreline Miser',
-    summary: 'Prefers no-Island squeezes, defense, and slow inevitability.',
+    summary: 'Aggressively mulligans for blue non-Island lands, never plays Islands, and squeezes the game dry.',
     tags: ['denial', 'control'],
     style: {
       aggressionMultiplier: 0.8,
@@ -264,8 +264,9 @@ export const getLivePolicyWeights = (difficulty, characterId = null, basePolicy 
     : normalizePolicy(fallbackPolicy);
   return applyCharacterStyle(normalizedBase, characterId);
 };
+const getActorCharacterId = (state, actor = 'ai') => actor === 'player' ? state?.playerAiCharacterId : state?.aiCharacterId;
 export const getAiPolicyForActor = (state, actor = 'ai', difficulty = state?.difficulty || 'medium') => {
-  const characterId = actor === 'player' ? state?.playerAiCharacterId : state?.aiCharacterId;
+  const characterId = getActorCharacterId(state, actor);
   return getLivePolicyWeights(difficulty, characterId);
 };
 
@@ -1073,6 +1074,17 @@ const getAiLibraryOrder = (state, actor, cards, policy) => {
   }
   return scored.sort((left, right) => right.score - left.score || left.card.cost - right.card.cost).map(entry => entry.card);
 };
+const isIslandLandCard = (card) => Boolean(card?.isLand) && getLandType(card) === 'Island';
+const isBlueNonIslandLandCard = (card) => Boolean(card?.isLand) && (card.blueSources || 0) > 0 && getLandType(card) !== 'Island';
+const isTortoise = (state, actor) => getActorCharacterId(state, actor) === 'tortoise';
+const getAiOpeningBottomScore = (state, actor, card, policy) => {
+  let score = getAiCardValue(state, actor, card, policy);
+  if (isTortoise(state, actor)) {
+    if (isIslandLandCard(card)) score -= 20;
+    if (isBlueNonIslandLandCard(card)) score += 10;
+  }
+  return score;
+};
 const getAiPutBackCards = (state, actor, count, policy) => {
   const chosen = [...state[actor].hand]
     .sort((left, right) => getAiCardValue(state, actor, left, policy) - getAiCardValue(state, actor, right, policy) || left.cost - right.cost)
@@ -1085,6 +1097,47 @@ const getAiPutBackCards = (state, actor, count, policy) => {
   }
 
   return chosen;
+};
+const getAiOpeningBottomCards = (state, actor, count, policy) => [...state[actor].hand]
+  .sort((left, right) => getAiOpeningBottomScore(state, actor, left, policy) - getAiOpeningBottomScore(state, actor, right, policy) || left.cost - right.cost)
+  .slice(0, count);
+export const shouldAiMulliganOpeningHand = (state, actor, mulligansTaken = 0) => {
+  if (!isTortoise(state, actor)) return false;
+  if (mulligansTaken >= 3) return false;
+  const hand = state[actor].hand;
+  const nonIslandBlueLands = hand.filter(isBlueNonIslandLandCard).length;
+  return nonIslandBlueLands < 2;
+};
+const runAiOpeningMulligans = (state, actor) => {
+  const characterId = getActorCharacterId(state, actor);
+  if (!characterId) return 0;
+
+  let mulligansTaken = 0;
+  while (shouldAiMulliganOpeningHand(state, actor, mulligansTaken)) {
+    state.deck = [...state.deck, ...state[actor].hand];
+    state[actor].hand = [];
+    resetHiddenKnowledge(state);
+    for (let i = state.deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [state.deck[i], state.deck[j]] = [state.deck[j], state.deck[i]];
+    }
+    drawCards(state, actor, 7);
+    mulligansTaken++;
+  }
+
+  if (mulligansTaken > 0) {
+    const policy = getAiPolicyForActor(state, actor);
+    getAiOpeningBottomCards(state, actor, mulligansTaken, policy).forEach(card => {
+      const idx = state[actor].hand.findIndex(entry => entry.id === card.id);
+      if (idx > -1) {
+        const [bottomed] = state[actor].hand.splice(idx, 1);
+        state.deck.unshift(bottomed);
+      }
+    });
+    resetHiddenKnowledge(state);
+  }
+
+  return mulligansTaken;
 };
 const getAiTellingTimePlan = (state, actor, cards, policy) => {
   const ordered = [...cards].sort((left, right) => getAiCardValue(state, actor, right, policy) - getAiCardValue(state, actor, left, policy) || left.cost - right.cost);
@@ -1328,7 +1381,11 @@ const getLandPlayScore = (state, actor, card, lands = state[actor].hand.filter(p
 const chooseLandToPlay = (state, actor) => {
   const lands = state[actor].hand.filter(card => card.isLand);
   if (lands.length === 0) return null;
-  return [...lands].sort((left, right) => getLandPlayScore(state, actor, right, lands) - getLandPlayScore(state, actor, left, lands))[0];
+  const eligibleLands = isTortoise(state, actor)
+    ? lands.filter(card => !isIslandLandCard(card))
+    : lands;
+  if (eligibleLands.length === 0) return null;
+  return [...eligibleLands].sort((left, right) => getLandPlayScore(state, actor, right, eligibleLands) - getLandPlayScore(state, actor, left, eligibleLands))[0];
 };
 
 const getDesiredAttackCount = (state, actor, policy) => {
@@ -2528,6 +2585,10 @@ export const createGameReducer = (effects = defaultEffects) => {
          pendingAction: null, pendingTargetSelection: null
       };
       drawAlternating(s, 'player', 7);
+      const playerAiMulligans = runAiOpeningMulligans(s, 'player');
+      const aiMulligans = runAiOpeningMulligans(s, 'ai');
+      if (gameMode === 'ai_vs_ai' && playerAiMulligans > 0) logAction(`AI South mulliganed to ${7 - playerAiMulligans}.`);
+      if (aiMulligans > 0) logAction(`${gameMode === 'ai_vs_ai' ? 'AI North' : 'Opponent'} mulliganed to ${7 - aiMulligans}.`);
       logAction(gameMode === 'ai_vs_ai' ? "AI mirror started." : "Game started. Mulligan phase.");
       return s;
 

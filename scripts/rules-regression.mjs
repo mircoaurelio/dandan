@@ -42,8 +42,10 @@ const {
   checkHasActions,
   chooseAiAction,
   createGameReducer,
+  getAiPolicyForActor,
   initialState,
-  isActivatable
+  isActivatable,
+  shouldAiMulliganOpeningHand
 } = engine;
 
 const effects = {
@@ -162,6 +164,74 @@ test('start game preserves free and adventure character metadata', () => {
   expect(adventureState.gameMode === 'adventure', `expected adventure game mode, got ${adventureState.gameMode}`);
   expect(adventureState.aiCharacterId === 'leviathan', `expected leviathan boss, got ${adventureState.aiCharacterId}`);
   expect(adventureState.phase === 'mulligan', `adventure mode should start in mulligan, got ${adventureState.phase}`);
+});
+
+test('Tortoise mulligans Island-heavy openers until it finds two blue non-Island lands', () => {
+  const islandA = makeCard(CARDS.ISLAND_1, { id: 'tort-island-a' });
+  const islandB = makeCard(CARDS.ISLAND_2, { id: 'tort-island-b' });
+  const bay = makeCard(CARDS.SURGICAL_BAY, { id: 'tort-bay' });
+  const depths = makeCard(CARDS.HALIMAR, { id: 'tort-depths' });
+  const fillerSpell = makeCard(CARDS.BRAINSTORM, { id: 'tort-brainstorm' });
+  const dandan = makeCard(CARDS.DANDAN, { id: 'tort-dandan' });
+
+  const islandHeavy = makeState({
+    aiCharacterId: 'tortoise',
+    ai: {
+      life: 20,
+      hand: [islandA, islandB, fillerSpell, dandan],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+  expect(shouldAiMulliganOpeningHand(islandHeavy, 'ai', 0) === true, 'Tortoise should mulligan an opener with only Island mana');
+
+  const onPlan = makeState({
+    aiCharacterId: 'tortoise',
+    ai: {
+      life: 20,
+      hand: [bay, depths, fillerSpell, dandan],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+  expect(shouldAiMulliganOpeningHand(onPlan, 'ai', 0) === false, 'Tortoise should keep an opener with two blue non-Island lands');
+});
+
+test('Tortoise never plays Island lands', () => {
+  const island = makeCard(CARDS.ISLAND_1, { id: 'tort-only-island' });
+  const depths = makeCard(CARDS.HALIMAR, { id: 'tort-safe-land' });
+
+  const mixedState = makeState({
+    turn: 'ai',
+    priority: 'ai',
+    phase: 'main1',
+    difficulty: 'hard',
+    aiCharacterId: 'tortoise',
+    ai: {
+      life: 20,
+      hand: [island, depths],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+  const mixedAction = chooseAiAction(mixedState, 'ai', 'hard', getAiPolicyForActor(mixedState, 'ai', 'hard'));
+  expect(mixedAction.type === 'PLAY_LAND' && mixedAction.cardId === depths.id, 'Tortoise should choose the non-Island blue land over Island');
+
+  const islandOnlyState = makeState({
+    turn: 'ai',
+    priority: 'ai',
+    phase: 'main1',
+    difficulty: 'hard',
+    aiCharacterId: 'tortoise',
+    ai: {
+      life: 20,
+      hand: [makeCard(CARDS.ISLAND_2, { id: 'tort-lone-island' })],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+  const islandOnlyAction = chooseAiAction(islandOnlyState, 'ai', 'hard', getAiPolicyForActor(islandOnlyState, 'ai', 'hard'));
+  expect(islandOnlyAction.type !== 'PLAY_LAND', 'Tortoise should refuse to play a plain Island even when it is the only land');
 });
 
 test('Haunted Fengraf sacrifices itself and can return Dandan', () => {

@@ -1,6 +1,11 @@
 ﻿import React, { useState, useEffect, useRef, useReducer } from 'react';
 import { Play, SkipForward, Activity, Layers, Skull, Image as ImageIcon, Settings, X, Sun, Moon, Swords, Volume2, VolumeX, ArrowLeftRight, Target, Droplet, Shield, CloudRain, LogOut } from 'lucide-react';
 import { AI_CHARACTERS, AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, AI_SPEED, CARDS, DANDAN_NAME, DEFAULT_AI_CHARACTER_ID, PREDICT_OPTIONS, SHARED_DECK_SIZE, canDandanAttackDefender, checkHasActions, chooseAiAction, controlsIsland, createGameReducer, getAiCharacter, getAiPendingActions, getAiPolicyForActor, getAvailableMana, getManaPool, initialState, isActivatable, isCastable, isCyclable, isValidTarget } from './src/game/engine';
+import archivistPortrait from './img/Archivist.png';
+import leviathanPortrait from './img/Leviathan.png';
+import sharkPortrait from './img/shark.png';
+import tortoisePortrait from './img/Tortoise.png';
+import undertowPortrait from './img/Undertow.png';
 
 // --- ADVANCED AUDIO ENGINE ---
 const AudioEngine = {
@@ -211,11 +216,11 @@ const DIFFICULTY_ART = {
 const CHARACTER_ART = {
   deathfish: DIFFICULTY_ART.easy,
   redfin: DIFFICULTY_ART.medium,
-  tortoise: CARDS.HALIMAR.fullImage,
-  archivist: CARDS.PREDICT.fullImage,
-  undertow: CARDS.SURGICAL_BAY.fullImage,
-  shark: DIFFICULTY_ART.hard,
-  leviathan: CARDS.CAPTURE.fullImage
+  tortoise: tortoisePortrait,
+  archivist: archivistPortrait,
+  undertow: undertowPortrait,
+  shark: sharkPortrait,
+  leviathan: leviathanPortrait
 };
 const getCharacterPortrait = (characterId, difficulty = 'medium') => CHARACTER_ART[characterId] || DIFFICULTY_ART[difficulty] || DIFFICULTY_ART.medium;
 const APP_VERSION = 'v0.2.0';
