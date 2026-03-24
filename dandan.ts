@@ -228,10 +228,12 @@ const getLandStackStep = (total) => {
   };
 };
 
+const ASSET_BASE_URL = import.meta.env.BASE_URL;
+
 const DIFFICULTY_ART = {
-  easy: '/difficulty/deathfish.png',
-  medium: '/difficulty/redfish.png',
-  hard: '/difficulty/shark.png'
+  easy: `${ASSET_BASE_URL}difficulty/deathfish.png`,
+  medium: `${ASSET_BASE_URL}difficulty/redfish.png`,
+  hard: `${ASSET_BASE_URL}difficulty/shark.png`
 };
 
 // --- PRELOADER COMPONENT ---
@@ -1225,11 +1227,13 @@ export default function App() {
               </div>
             )}
 
-           <div className={`${isAiMirror ? 'h-[32%]' : 'h-[45%]'} flex items-center px-3 sm:px-4 overflow-x-auto overflow-y-visible custom-scrollbar`}>
-              <div className="flex items-center gap-2 sm:gap-3 mx-auto min-w-max py-2">
+           <div className={`${isAiMirror ? 'h-[32%]' : 'h-[45%]'} min-h-[108px] sm:min-h-[132px] flex items-center px-3 sm:px-4 overflow-visible`}>
+              <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar py-3">
+                <div className="flex items-start gap-2 sm:gap-3 mx-auto min-w-max">
                 {groupLands(state.ai.board).map((group, i) => (
                    <StackedLandGroup key={i} lands={group} official={useOfficialCards} state={state} zone="board" onZoom={setZoomedCard} onClick={(card) => handleCardClick(card, 'board')} />
                 ))}
+                </div>
               </div>
            </div>
            <div className="h-[50%] flex gap-2 justify-center items-center px-4 custom-scrollbar mt-1">
@@ -1283,11 +1287,13 @@ export default function App() {
                  <Card key={c.id} card={c} zone="board" official={useOfficialCards} onZoom={setZoomedCard} targetable={isValidTarget(c, 'board', state)} onClick={(card) => handleCardClick(card, 'board')} />
               ))}
            </div>
-           <div className="h-[25%] flex items-center px-3 sm:px-4 mt-1 overflow-x-auto overflow-y-visible custom-scrollbar">
-              <div className="flex items-center gap-2 sm:gap-3 mx-auto min-w-max py-2">
+           <div className="h-[25%] min-h-[108px] sm:min-h-[132px] flex items-center px-3 sm:px-4 mt-1 overflow-visible">
+              <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar py-3">
+                <div className="flex items-start gap-2 sm:gap-3 mx-auto min-w-max">
                 {groupLands(state.player.board).map((group, i) => (
                    <StackedLandGroup key={i} lands={group} official={useOfficialCards} state={state} zone="board" onZoom={setZoomedCard} onClick={(card) => handleCardClick(card, 'board')} activatablePlayer="player" />
                 ))}
+                </div>
               </div>
            </div>
             <div className="flex-1 flex items-end justify-center px-2 pb-2 mt-auto z-40 w-full overflow-x-visible">
