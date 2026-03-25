@@ -148,8 +148,8 @@ export const DEFAULT_AI_CHARACTER_ID = 'shark';
 export const AI_CHARACTERS = [
   {
     id: 'tortoise',
-    name: 'The Tortoise',
-    title: 'The Shoreline Miser',
+    name: 'Tortoise',
+    title: 'Shoreline Miser',
     summary: 'Aggressively mulligans for blue non-Island lands, never plays Islands, and squeezes the game dry.',
     tags: ['denial', 'control'],
     style: {
@@ -169,8 +169,8 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'shark',
-    name: 'The Shark',
-    title: 'The Tempo Predator',
+    name: 'Shark',
+    title: 'Tempo Predator',
     summary: 'Tempo killer. Slams Dandan when protected, punishes stumbles, and loves crackback lethals.',
     tags: ['tempo', 'pressure'],
     style: {
@@ -187,7 +187,7 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'archivist',
-    name: 'The Archivist',
+    name: 'Archivist',
     title: 'Keeper Of Topdecks',
     summary: 'Memory monster. Best at Predict, Mental Note, Halimar Depths, Telling Time, and Mystic Sanctuary.',
     tags: ['memory', 'library'],
@@ -206,8 +206,8 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'eel',
-    name: 'The Eel',
-    title: 'The Slipstream Trickster',
+    name: 'Eel',
+    title: 'Slipstream Trickster',
     summary: 'Trickster. Passes often, wins on stack timing, bounce traps, and surprise rescues.',
     tags: ['tricks', 'stack'],
     style: {
@@ -226,8 +226,8 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'siren',
-    name: 'The Siren',
-    title: 'The Borrowed Tide',
+    name: 'Siren',
+    title: 'Borrowed Tide',
     summary: 'Theft/control specialist. Prioritizes Control Magic, self-bounce to break theft, and long stack traps.',
     tags: ['theft', 'control'],
     style: {
@@ -246,7 +246,7 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'undertow',
-    name: 'The Undertow',
+    name: 'Undertow',
     title: 'Winner Of Draw Wars',
     summary: 'Draw-war expert. Loves Surgical Bay, instant-speed races, top-card denial, and response windows.',
     tags: ['stack', 'draw-wars'],
@@ -265,8 +265,8 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'cartographer',
-    name: 'The Cartographer',
-    title: 'The Library Sculptor',
+    name: 'Cartographer',
+    title: 'Library Sculptor',
     summary: 'Library sculptor. Maximizes topdeck quality with Brainstorm, Sanctuary, Halimar, and Predict.',
     tags: ['library', 'setup'],
     style: {
@@ -285,8 +285,8 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'piranha',
-    name: 'The Piranha',
-    title: 'The Bloodwake Sprinter',
+    name: 'Piranha',
+    title: 'Bloodwake Sprinter',
     summary: 'Hyper-aggressive. Converts tiny tempo edges into lethal pressure, blocks less, and attacks relentlessly.',
     tags: ['aggressive', 'tempo'],
     style: {
@@ -303,8 +303,8 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'hermit',
-    name: 'The Hermit Crab',
-    title: 'The Last Shell',
+    name: 'Hermit Crab',
+    title: 'Last Shell',
     summary: 'Survival specialist. Extremely hard to kill, holds interaction, and values not dying over greed.',
     tags: ['survival', 'control'],
     style: {
@@ -325,7 +325,7 @@ export const AI_CHARACTERS = [
   },
   {
     id: 'leviathan',
-    name: 'The Leviathan',
+    name: 'Leviathan',
     title: 'Honest Final Boss',
     summary: 'Fair final honest boss. Same public info only, but deepest search, best memory, and best motif coverage.',
     tags: ['boss', 'fair'],

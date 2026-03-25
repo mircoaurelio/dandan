@@ -37,6 +37,10 @@ textarea,
   font-family: var(--font-ui) !important;
 }
 
+.font-black {
+  font-weight: 700 !important;
+}
+
 .font-arena-display,
 .font-arena-display button,
 .font-arena-display input,
@@ -116,6 +120,34 @@ textarea,
   }
 }
 
+@keyframes landing-water-ripple-ring {
+  0% {
+    transform: translate(-50%, -50%) scale(0.16, 0.11);
+    opacity: 0.42;
+  }
+
+  45% {
+    opacity: 0.3;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.12, 0.9);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-water-ripple-lens {
+  0% {
+    transform: translate(-50%, -50%) scale(0.18);
+    opacity: 0.22;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.22);
+    opacity: 0;
+  }
+}
+
 .fish-bob {
   animation: fish-bob 1.8s ease-in-out infinite;
 }
@@ -161,6 +193,21 @@ textarea,
 
 .attached-permanent {
   left: calc(var(--attached-count, 0) * var(--attached-step));
+}
+
+.compact-permanent-pair {
+  --compact-step: var(--compact-step-mobile, 19px);
+  position: relative;
+  flex: 0 0 auto;
+  width: var(--compact-width-mobile, 64px);
+  min-width: var(--compact-width-mobile, 64px);
+  height: 126px;
+}
+
+.compact-permanent-card {
+  position: absolute;
+  top: 0;
+  left: calc(var(--compact-index, 0) * var(--compact-step));
 }
 
 .arena-pass-button,
@@ -212,6 +259,58 @@ textarea,
   animation: pass-button-glow 1.55s ease-in-out infinite;
 }
 
+.landing-water-ripple {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  border-radius: 9999px;
+  overflow: visible;
+}
+
+.landing-water-ripple-ring,
+.landing-water-ripple-lens {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+  border-radius: 9999px;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.landing-water-ripple-lens {
+  width: 62%;
+  height: 62%;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.1) 28%, rgba(255, 255, 255, 0.04) 54%, transparent 74%);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    inset 0 0 24px rgba(255, 255, 255, 0.12),
+    0 0 26px rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(4px) saturate(1.45) brightness(1.18) contrast(1.08);
+  -webkit-backdrop-filter: blur(4px) saturate(1.45) brightness(1.18) contrast(1.08);
+  animation: landing-water-ripple-lens 1.5s ease-out forwards;
+}
+
+.landing-water-ripple-ring {
+  width: 100%;
+  height: 100%;
+  border: 2px solid rgba(226, 232, 240, 0.38);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
+    0 0 28px rgba(255, 255, 255, 0.12);
+  animation: landing-water-ripple-ring 1.7s ease-out forwards;
+}
+
+.landing-water-ripple-ring-2 {
+  animation-delay: 120ms;
+}
+
+.landing-water-ripple-ring-3 {
+  animation-delay: 240ms;
+}
+
 @media (min-width: 640px) {
   .land-stack-group {
     --land-card-width: 80px;
@@ -222,5 +321,12 @@ textarea,
   .attached-permanent-stack {
     --attached-card-width: 80px;
     --attached-step: 40px;
+  }
+
+  .compact-permanent-pair {
+    --compact-step: var(--compact-step-desktop, 24px);
+    width: var(--compact-width-desktop, 80px);
+    min-width: var(--compact-width-desktop, 80px);
+    height: 140px;
   }
 }

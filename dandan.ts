@@ -11,6 +11,8 @@ import sharkPortrait from './img/shark.png';
 import sirenPortrait from './img/siren.png';
 import tortoisePortrait from './img/Tortoise.png';
 import undertowPortrait from './img/Undertow.png';
+import wall1Background from './img/wall1.jpg';
+import wall2Background from './img/wall2.jpg';
 
 // --- ADVANCED AUDIO ENGINE ---
 const AudioEngine = {
@@ -232,10 +234,47 @@ const CHARACTER_ART = {
 };
 const getCharacterPortrait = (characterId, difficulty = 'medium') => CHARACTER_ART[characterId] || DIFFICULTY_ART[difficulty] || DIFFICULTY_ART.medium;
 const APP_VERSION = 'v0.3.1';
-const ADVENTURE_ROUTE = ['tortoise', 'shark', 'archivist', 'eel', 'siren', 'undertow', 'cartographer', 'piranha', 'hermit', 'leviathan'];
+const ADVENTURE_ROUTE = ['shark', 'archivist', 'eel', 'siren', 'undertow', 'cartographer', 'piranha', 'hermit', 'tortoise', 'leviathan'];
+const ADVENTURE_MAP_LAYOUT = [
+  { left: 12, top: 78 },
+  { left: 28, top: 68 },
+  { left: 45, top: 75 },
+  { left: 65, top: 62 },
+  { left: 84, top: 72 },
+  { left: 74, top: 42 },
+  { left: 54, top: 30 },
+  { left: 33, top: 40 },
+  { left: 18, top: 19 },
+  { left: 56, top: 10 }
+];
+const ADVENTURE_FIXED_DIFFICULTY = 'hard';
 const ADVENTURE_BOSS_ID = ADVENTURE_ROUTE[ADVENTURE_ROUTE.length - 1];
 const RIVAL_PROGRESS_STORAGE_KEY = 'forgetful-fish-rival-progress-v1';
+const LANDING_BACKGROUNDS = [wall1Background, wall2Background];
+const LANDING_BACKGROUND_STORAGE_KEY = 'forgetful-fish-landing-bg-v1';
 const clampAdventureProgress = (value) => Math.max(0, Math.min(Number.isFinite(value) ? value : 0, ADVENTURE_ROUTE.length));
+const getRandomLandingBackground = (exclude = null) => {
+  const options = exclude ? LANDING_BACKGROUNDS.filter(background => background !== exclude) : LANDING_BACKGROUNDS;
+  const pool = options.length > 0 ? options : LANDING_BACKGROUNDS;
+  return pool[Math.floor(Math.random() * pool.length)] || LANDING_BACKGROUNDS[0];
+};
+const loadLandingBackground = () => {
+  if (typeof window === 'undefined') return LANDING_BACKGROUNDS[0];
+  try {
+    const lastBackground = window.localStorage.getItem(LANDING_BACKGROUND_STORAGE_KEY);
+    const nextBackground = getRandomLandingBackground(lastBackground);
+    window.localStorage.setItem(LANDING_BACKGROUND_STORAGE_KEY, nextBackground);
+    return nextBackground;
+  } catch (_error) {
+    return getRandomLandingBackground();
+  }
+};
+const storeLandingBackground = (background) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LANDING_BACKGROUND_STORAGE_KEY, background);
+  } catch (_error) {}
+};
 const loadRivalProgress = () => {
   if (typeof window === 'undefined') return { adventureWinsCount: 0 };
   try {
@@ -267,6 +306,7 @@ const Preloader = ({ onComplete }) => {
     Object.values(CARDS).forEach(c => { urls.add(c.image); urls.add(c.fullImage); });
     Object.values(DIFFICULTY_ART).forEach(url => urls.add(url));
     Object.values(CHARACTER_ART).forEach(url => urls.add(url));
+    LANDING_BACKGROUNDS.forEach(url => urls.add(url));
     const urlArray = Array.from(urls);
     let loaded = 0;
     
@@ -564,17 +604,750 @@ const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state
   );
 };
 
+const getCompactPermanentPairMetrics = (stackPair) => {
+  const visibleRatio = 0.3;
+  const stepMobile = Math.round(64 * visibleRatio);
+  const stepDesktop = Math.round(80 * visibleRatio);
+  const widths = stackPair.map(({ attachedAuras = [] }) => ({
+    mobile: 64 + attachedAuras.length * 32,
+    desktop: 80 + attachedAuras.length * 40
+  }));
+  const mobileWidth = widths.length > 1 ? Math.max(widths[0].mobile, stepMobile + widths[1].mobile) : widths[0]?.mobile || 64;
+  const desktopWidth = widths.length > 1 ? Math.max(widths[0].desktop, stepDesktop + widths[1].desktop) : widths[0]?.desktop || 80;
+
+  return { stepMobile, stepDesktop, mobileWidth, desktopWidth };
+};
+
+const CompactPermanentPair = ({ stackPair, official, state, onZoom, onClick, getSubtleHighlight = () => false }) => {
+  const { stepMobile, stepDesktop, mobileWidth, desktopWidth } = getCompactPermanentPairMetrics(stackPair);
+
+  return (
+    <div
+      className="compact-permanent-pair"
+      style={{
+        '--compact-step-mobile': `${stepMobile}px`,
+        '--compact-step-desktop': `${stepDesktop}px`,
+        '--compact-width-mobile': `${mobileWidth}px`,
+        '--compact-width-desktop': `${desktopWidth}px`
+      }}
+    >
+      {stackPair.map(({ key, permanent, attachedAuras }, index) => (
+        <div key={key} className="compact-permanent-card" style={{ '--compact-index': `${index}`, zIndex: index + 1 }}>
+          <AttachedPermanentStack
+            permanent={permanent}
+            attachedAuras={attachedAuras}
+            official={official}
+            state={state}
+            onZoom={onZoom}
+            onClick={onClick}
+            subtleHighlight={getSubtleHighlight(permanent)}
+          />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const BoardPermanentRow = ({ stacks, official, state, onZoom, onClick, getSubtleHighlight = () => false, className = '' }) => {
+  if (stacks.length === 0) {
+    return <div className={`w-full ${className}`.trim()} />;
+  }
+
+  const shouldCompact = stacks.length >= 5;
+
+  if (!shouldCompact) {
+    return (
+      <div className={`flex gap-2 justify-center items-center w-full ${className}`.trim()}>
+        {stacks.map(({ key, permanent, attachedAuras }) => (
+          <AttachedPermanentStack
+            key={key}
+            permanent={permanent}
+            attachedAuras={attachedAuras}
+            official={official}
+            state={state}
+            onZoom={onZoom}
+            onClick={onClick}
+            subtleHighlight={getSubtleHighlight(permanent)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  const stackPairs = [];
+  for (let index = 0; index < stacks.length; index += 2) {
+    stackPairs.push(stacks.slice(index, index + 2));
+  }
+
+  return (
+    <div className={`w-full overflow-x-auto overflow-y-hidden custom-scrollbar ${className}`.trim()}>
+      <div className="flex justify-center min-w-full">
+        <div className="flex items-center gap-2 sm:gap-3 w-max py-1">
+          {stackPairs.map((stackPair, index) => (
+            <CompactPermanentPair
+              key={stackPair.map(({ key }) => key).join('|') || `pair-${index}`}
+              stackPair={stackPair}
+              official={official}
+              state={state}
+              onZoom={onZoom}
+              onClick={onClick}
+              getSubtleHighlight={getSubtleHighlight}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const HomeActionButton = ({ label, onClick, className = '', labelClassName = '' }) => (
+  <button
+    onClick={onClick}
+    className={`group relative overflow-hidden transition-all duration-200 hover:-translate-y-[2px] active:translate-y-0 ${className}`.trim()}
+  >
+    <div className="pointer-events-none absolute inset-[1px] rounded-[inherit] bg-[linear-gradient(180deg,rgba(100,116,139,0.42),rgba(51,65,85,0.34))]" />
+    <div className="pointer-events-none absolute inset-0 rounded-[inherit] opacity-90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08),0_0_18px_rgba(125,211,252,0.12),0_0_40px_rgba(14,165,233,0.08)] transition-opacity duration-200 group-hover:opacity-100" />
+    <div className="absolute inset-0 opacity-0 transition-opacity duration-200 group-hover:opacity-100 bg-[linear-gradient(90deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))]" />
+    <div className="relative flex items-center justify-center">
+      <div className={`min-w-0 w-full text-center font-arena-display ${labelClassName}`.trim()}>{label}</div>
+    </div>
+  </button>
+);
+
+const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onSettings }) => {
+  if (variantId === 'duel') {
+    return (
+      <div className="w-full max-w-4xl mx-auto grid gap-3">
+        <HomeActionButton
+          label="Adventure"
+          onClick={onAdventure}
+          className="min-h-[138px] rounded-[2rem] border border-slate-200/55 bg-white/86 px-6 py-6 text-left shadow-[0_24px_60px_rgba(15,23,42,0.22)] backdrop-blur-[2px]"
+          labelClassName="text-3xl sm:text-4xl font-semibold tracking-[-0.03em] text-slate-950"
+          indicatorClassName="border-slate-300/80 bg-slate-950/6 text-slate-950"
+        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <HomeActionButton
+            label="Quick Game"
+            onClick={onQuickGame}
+            className="min-h-[118px] rounded-[1.8rem] border border-slate-200/40 bg-white/72 px-5 py-5 text-left shadow-[0_20px_44px_rgba(15,23,42,0.18)] backdrop-blur-[2px]"
+            labelClassName="text-2xl sm:text-3xl font-semibold tracking-[-0.03em] text-slate-950"
+            indicatorClassName="border-rose-300/50 bg-rose-50/80 text-rose-700"
+          />
+          <HomeActionButton
+            label="Settings"
+            onClick={onSettings}
+            className="min-h-[118px] rounded-[1.8rem] border border-slate-200/40 bg-white/72 px-5 py-5 text-left shadow-[0_20px_44px_rgba(15,23,42,0.18)] backdrop-blur-[2px]"
+            labelClassName="text-2xl sm:text-3xl font-semibold tracking-[-0.03em] text-slate-950"
+            indicatorClassName="border-amber-300/50 bg-amber-50/80 text-amber-700"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (variantId === 'frame') {
+    return (
+      <div className="w-full max-w-lg mx-auto grid gap-3">
+        <HomeActionButton
+          label="Adventure"
+          onClick={onAdventure}
+          className="rounded-[1.55rem] border border-slate-300/70 bg-slate-50/88 px-5 py-5 text-left shadow-[0_18px_38px_rgba(15,23,42,0.2)] backdrop-blur-[2px]"
+          labelClassName="text-2xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
+          indicatorClassName="border-cyan-300/60 bg-cyan-50 text-cyan-700"
+        />
+        <HomeActionButton
+          label="Quick Game"
+          onClick={onQuickGame}
+          className="rounded-[1.55rem] border border-slate-300/70 bg-slate-50/88 px-5 py-5 text-left shadow-[0_18px_38px_rgba(15,23,42,0.2)] backdrop-blur-[2px]"
+          labelClassName="text-2xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
+          indicatorClassName="border-rose-300/60 bg-rose-50 text-rose-700"
+        />
+        <HomeActionButton
+          label="Settings"
+          onClick={onSettings}
+          className="rounded-[1.55rem] border border-slate-300/70 bg-slate-50/88 px-5 py-5 text-left shadow-[0_18px_38px_rgba(15,23,42,0.2)] backdrop-blur-[2px]"
+          labelClassName="text-2xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
+          indicatorClassName="border-amber-300/60 bg-amber-50 text-amber-700"
+        />
+      </div>
+    );
+  }
+
+  if (variantId === 'route') {
+    return (
+      <div className="w-full max-w-3xl mx-auto grid gap-4 lg:grid-cols-[84px_minmax(0,1fr)] items-stretch">
+        <div className="hidden lg:flex items-center justify-center">
+          <div className="h-full min-h-[360px] w-px bg-gradient-to-b from-white/0 via-white/75 to-white/0" />
+        </div>
+        <div className="grid gap-3">
+          <HomeActionButton
+            label="Adventure"
+            onClick={onAdventure}
+            className="rounded-[1.9rem] border border-white/55 bg-white/84 px-6 py-6 text-left shadow-[0_18px_40px_rgba(15,23,42,0.2)] backdrop-blur-[2px]"
+            labelClassName="text-3xl sm:text-[2.6rem] font-semibold tracking-[-0.04em] text-slate-950"
+            indicatorClassName="border-slate-300/70 bg-slate-900/5 text-slate-950"
+          />
+          <HomeActionButton
+            label="Quick Game"
+            onClick={onQuickGame}
+            className="rounded-[1.9rem] border border-white/45 bg-white/74 px-6 py-5 text-left shadow-[0_18px_36px_rgba(15,23,42,0.18)] backdrop-blur-[2px] sm:ml-8"
+            labelClassName="text-2xl sm:text-[2.2rem] font-semibold tracking-[-0.03em] text-slate-950"
+            indicatorClassName="border-rose-300/55 bg-rose-50/90 text-rose-700"
+          />
+          <HomeActionButton
+            label="Settings"
+            onClick={onSettings}
+            className="rounded-[1.9rem] border border-white/45 bg-white/74 px-6 py-5 text-left shadow-[0_18px_36px_rgba(15,23,42,0.18)] backdrop-blur-[2px] sm:ml-16"
+            labelClassName="text-2xl sm:text-[2.2rem] font-semibold tracking-[-0.03em] text-slate-950"
+            indicatorClassName="border-amber-300/55 bg-amber-50/90 text-amber-700"
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (variantId === 'poster') {
+    return (
+      <div className="w-full max-w-4xl mx-auto grid gap-3">
+        <HomeActionButton
+          label="Adventure"
+          onClick={onAdventure}
+          className="rounded-[2rem] border border-white/50 bg-white/84 px-6 py-6 text-left shadow-[0_20px_44px_rgba(15,23,42,0.2)] backdrop-blur-[2px]"
+          labelClassName="text-3xl sm:text-[3rem] font-semibold tracking-[-0.04em] text-slate-950"
+          indicatorClassName="border-cyan-300/60 bg-cyan-50/95 text-cyan-700"
+        />
+        <HomeActionButton
+          label="Quick Game"
+          onClick={onQuickGame}
+          className="rounded-[2rem] border border-white/42 bg-white/74 px-6 py-6 text-left shadow-[0_20px_44px_rgba(15,23,42,0.18)] backdrop-blur-[2px]"
+          labelClassName="text-3xl sm:text-[3rem] font-semibold tracking-[-0.04em] text-slate-950"
+          indicatorClassName="border-rose-300/60 bg-rose-50/95 text-rose-700"
+        />
+        <HomeActionButton
+          label="Settings"
+          onClick={onSettings}
+          className="rounded-[2rem] border border-white/42 bg-white/74 px-6 py-6 text-left shadow-[0_20px_44px_rgba(15,23,42,0.18)] backdrop-blur-[2px]"
+          labelClassName="text-3xl sm:text-[3rem] font-semibold tracking-[-0.04em] text-slate-950"
+          indicatorClassName="border-amber-300/60 bg-amber-50/95 text-amber-700"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full max-w-md mx-auto grid gap-3">
+      <HomeActionButton
+        label="Adventure"
+        onClick={onAdventure}
+        className="min-h-[78px] rounded-full bg-slate-700/58 p-0 shadow-[0_20px_44px_rgba(15,23,42,0.32)] hover:bg-slate-700/68"
+        labelClassName="text-[1.85rem] sm:text-[2rem] tracking-[0.02em] text-white"
+      />
+      <HomeActionButton
+        label="Quick Game"
+        onClick={onQuickGame}
+        className="min-h-[78px] rounded-full bg-slate-700/58 p-0 shadow-[0_20px_44px_rgba(15,23,42,0.32)] hover:bg-slate-700/68"
+        labelClassName="text-[1.85rem] sm:text-[2rem] tracking-[0.02em] text-white"
+      />
+      <HomeActionButton
+        label="Settings"
+        onClick={onSettings}
+        className="min-h-[78px] rounded-full bg-slate-700/58 p-0 shadow-[0_20px_44px_rgba(15,23,42,0.32)] hover:bg-slate-700/68"
+        labelClassName="text-[1.85rem] sm:text-[2rem] tracking-[0.02em] text-white"
+      />
+    </div>
+  );
+};
+
+const AdventureMenuPanel = ({
+  adventurePathPoints,
+  isAdventureComplete,
+  nextAdventureCharacter,
+  adventureWinsCount,
+  adventureProgressRatio,
+  adventureStageNumber,
+  availableAdventureStages,
+  onBack,
+  onStartAdventure,
+  onRestartAdventure
+}) => (
+  <div className="grid gap-4 font-arena-display lg:grid-cols-[minmax(0,1.35fr)_300px]">
+    <div className="rounded-[1.6rem] bg-white/[0.08] p-4 shadow-[0_24px_54px_rgba(2,6,23,0.28)] backdrop-blur-xl">
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-300">Adventure</div>
+          <div className="mt-1 text-xl sm:text-2xl text-white">Rival Route</div>
+        </div>
+        <div className="text-right">
+          <div className="text-[10px] uppercase tracking-[0.18em] text-slate-300/75">Progress</div>
+          <div className="text-lg text-white">{Math.min(adventureWinsCount, ADVENTURE_ROUTE.length)}/{ADVENTURE_ROUTE.length}</div>
+        </div>
+      </div>
+
+      <div className="relative aspect-[4/5] sm:aspect-[16/10] rounded-[1.45rem] overflow-hidden bg-[linear-gradient(180deg,rgba(15,23,42,0.18),rgba(15,23,42,0.36))] shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.18),transparent_56%)]" />
+        <div className="absolute inset-0 opacity-[0.08]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.18) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.18) 1px, transparent 1px)', backgroundSize: '44px 44px' }} />
+        <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full" preserveAspectRatio="none" aria-hidden="true">
+          <polyline points={adventurePathPoints} fill="none" stroke="rgba(100,116,139,0.36)" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+          <polyline points={adventurePathPoints} fill="none" stroke="rgba(226,232,240,0.6)" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="4 3" />
+        </svg>
+        <div className="absolute inset-[3.5%] sm:inset-[3%]">
+          {ADVENTURE_ROUTE.map((characterId, index) => {
+            const character = getAiCharacter(characterId) || AI_CHARACTERS[index];
+            const layout = ADVENTURE_MAP_LAYOUT[index];
+            const isCurrentStage = !isAdventureComplete && index === Math.min(adventureWinsCount, ADVENTURE_ROUTE.length - 1);
+            const isCleared = isAdventureComplete || index < adventureWinsCount;
+            const isLocked = !isAdventureComplete && index >= availableAdventureStages;
+            const isBoss = characterId === ADVENTURE_BOSS_ID;
+
+            return (
+              <div
+                key={characterId}
+                className="absolute -translate-x-1/2 -translate-y-1/2"
+                style={{ left: `${layout.left}%`, top: `${layout.top}%` }}
+              >
+                <div className="flex flex-col items-center gap-1 sm:gap-2">
+                  <div className={`relative rounded-[1.15rem] p-[3px] shadow-[0_12px_28px_rgba(15,23,42,0.24)] backdrop-blur-md transition-all ${
+                    isCurrentStage
+                      ? 'bg-white/28'
+                      : isCleared
+                        ? 'bg-white/18'
+                        : 'bg-slate-950/24'
+                  }`}>
+                    <img
+                      src={getCharacterPortrait(characterId, ADVENTURE_FIXED_DIFFICULTY)}
+                      alt={character.name}
+                      className={`h-11 w-11 sm:h-14 sm:w-14 rounded-full object-cover shadow-[0_8px_18px_rgba(2,6,23,0.28)] ${isLocked ? 'opacity-45 grayscale' : ''}`}
+                    />
+                    {isCurrentStage && (
+                      <div className="absolute -top-2 left-1/2 -translate-x-1/2 rounded-full bg-amber-300/96 px-1.5 py-0.5 text-[8px] uppercase tracking-[0.16em] text-slate-950 shadow-[0_10px_22px_rgba(251,191,36,0.34)]">
+                        Next
+                      </div>
+                    )}
+                    {isBoss && (
+                      <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-slate-950/88 px-1.5 py-0.5 text-[8px] uppercase tracking-[0.16em] text-amber-200 backdrop-blur-sm shadow-[0_10px_20px_rgba(15,23,42,0.28)]">
+                        Boss
+                      </div>
+                    )}
+                  </div>
+                  <div className="max-w-[60px] sm:max-w-[78px] text-center">
+                    <div className={`text-[8px] sm:text-[10px] uppercase tracking-[0.12em] leading-tight ${isLocked ? 'text-slate-400/70' : 'text-white'}`}>
+                      {character.name}
+                    </div>
+                    <div className="text-[7px] sm:text-[9px] uppercase tracking-[0.14em] text-slate-300/80">
+                      {isLocked ? 'Locked' : isCleared ? 'Cleared' : isCurrentStage ? 'Current' : 'Ahead'}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+
+    <div className="rounded-[1.6rem] bg-white/[0.08] p-5 shadow-[0_24px_54px_rgba(2,6,23,0.28)] backdrop-blur-xl">
+      <div>
+        <div className="flex items-center gap-3">
+          <img
+            src={getCharacterPortrait(nextAdventureCharacter.id, ADVENTURE_FIXED_DIFFICULTY)}
+            alt={nextAdventureCharacter.name}
+            className="w-16 h-16 rounded-full object-cover shadow-[0_12px_26px_rgba(2,6,23,0.3)]"
+          />
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.22em] text-slate-300">
+              {isAdventureComplete
+                ? 'Adventure Complete'
+                : `${adventureStageNumber}/${ADVENTURE_ROUTE.length}`}
+            </div>
+            <div className="text-lg text-white truncate">
+              {isAdventureComplete ? 'Gauntlet Cleared' : nextAdventureCharacter.name}
+            </div>
+            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-300/80">
+              {isAdventureComplete ? 'Every rival defeated' : nextAdventureCharacter.title}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-slate-300/80">
+            <span>Progress</span>
+            <span>{Math.min(adventureWinsCount, ADVENTURE_ROUTE.length)}/{ADVENTURE_ROUTE.length}</span>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-slate-800 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-slate-200 transition-all duration-300"
+              style={{ width: `${isAdventureComplete ? 100 : adventureProgressRatio * 100}%` }}
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-3">
+          <div className="grid grid-cols-[1fr_2fr] items-stretch gap-3">
+            <button
+              onClick={onBack}
+              className="flex min-h-[54px] h-full items-center justify-center rounded-2xl bg-slate-950/92 px-4 py-4 text-sm uppercase tracking-[0.08em] text-slate-100 shadow-[0_18px_34px_rgba(2,6,23,0.42)] transition-colors hover:bg-slate-900"
+            >
+              Back
+            </button>
+            <button
+              onClick={onStartAdventure}
+              className="flex min-h-[54px] h-full items-center justify-center rounded-2xl bg-slate-100 px-4 py-4 text-base uppercase tracking-[0.08em] text-slate-950 shadow-[0_14px_28px_rgba(255,255,255,0.14)] transition-colors hover:bg-white"
+            >
+              {isAdventureComplete ? 'Restart Adventure' : adventureWinsCount > 0 ? 'Continue Adventure' : 'Play'}
+            </button>
+          </div>
+          {adventureWinsCount > 0 && !isAdventureComplete && (
+            <button
+              onClick={onRestartAdventure}
+              className="w-full min-h-[52px] rounded-2xl bg-slate-900/72 px-4 py-3.5 text-sm uppercase tracking-[0.08em] text-slate-100 shadow-[0_14px_28px_rgba(15,23,42,0.26)] transition-colors hover:bg-slate-800/78"
+            >
+              Restart From Stage 1
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const QuickGameDialog = ({ selectedDifficulty, onClose, onStart }) => (
+  <div className="absolute inset-0 z-20 bg-black/82 flex items-start justify-center overflow-y-auto p-4 sm:p-6">
+    <div className="w-full max-w-xl rounded-[1.9rem] border border-slate-800 bg-slate-950 p-5 sm:p-6 text-left my-auto shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="font-arena-display text-2xl tracking-[0.08em] text-white">Quick Game</h2>
+        <button onClick={onClose} className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-200 transition-colors hover:bg-slate-800">
+          Back
+        </button>
+      </div>
+      <div className="flex items-start justify-center gap-3 sm:gap-5">
+        {AI_DIFFICULTIES.map((difficulty) => {
+          const isSelected = selectedDifficulty === difficulty;
+          const accentClass = difficulty === 'easy'
+            ? 'text-emerald-200'
+            : difficulty === 'medium'
+              ? 'text-rose-200'
+              : 'text-sky-200';
+          const ringClass = difficulty === 'easy'
+            ? 'border-emerald-400/70'
+            : difficulty === 'medium'
+              ? 'border-rose-400/70'
+              : 'border-sky-400/70';
+          return (
+            <button
+              key={difficulty}
+              onClick={() => onStart(difficulty)}
+              className={`group flex w-[92px] shrink-0 flex-col items-center gap-2 px-1 py-2 text-center transition-all sm:w-[118px] ${
+                isSelected
+                  ? 'bg-slate-100/6 text-slate-50'
+                  : 'text-slate-100 hover:-translate-y-[2px]'
+              }`}
+            >
+              <div
+                className={`relative h-20 w-20 overflow-hidden rounded-full border-4 shadow-[0_18px_36px_rgba(0,0,0,0.3)] sm:h-24 sm:w-24 ${
+                  isSelected ? 'border-slate-100' : `${ringClass} group-hover:scale-[1.03]`
+                }`}
+              >
+                <img
+                  src={DIFFICULTY_ART[difficulty]}
+                  alt={AI_DIFFICULTY_LABELS[difficulty]}
+                  className={`h-full w-full object-cover transition-transform duration-300 ${isSelected ? 'scale-105' : 'group-hover:scale-105'}`}
+                />
+                <div className={`absolute inset-0 rounded-full ${isSelected ? 'bg-[linear-gradient(180deg,transparent_0%,rgba(15,23,42,0.16)_100%)]' : 'bg-[linear-gradient(180deg,transparent_0%,rgba(2,6,23,0.38)_100%)]'}`} />
+              </div>
+              <div className={`font-arena-display text-base sm:text-lg tracking-[0.05em] ${accentClass}`}>
+                {AI_DIFFICULTY_LABELS[difficulty]}
+              </div>
+              <div className={`text-[11px] font-bold uppercase tracking-[0.16em] ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
+                {difficulty === 'easy' ? 'Deathfish' : difficulty === 'medium' ? 'Redfish' : 'Shark'}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+);
+
+const HomeVariantBar = () => null;
+
+const LandingScreen = ({
+  landingBackground,
+  menuScreen,
+  homeVariant,
+  onSelectHomeVariant,
+  onBack,
+  onOpenSettings,
+  showMenuSettings,
+  onCloseSettings,
+  muted,
+  onToggleMuted,
+  useOfficialCards,
+  onToggleOfficialCards,
+  showQuickGameDialog,
+  selectedDifficulty,
+  onQuickGameOpen,
+  onQuickGameClose,
+  onQuickGameStart,
+  onAdventureOpen,
+  adventureStageNumber,
+  adventureWinsCount,
+  adventurePathPoints,
+  isAdventureComplete,
+  nextAdventureCharacter,
+  adventureProgressRatio,
+  availableAdventureStages,
+  onStartAdventure,
+  onRestartAdventure
+}) => {
+  const [homeRevealStep, setHomeRevealStep] = useState(menuScreen === 'home' ? 0 : 3);
+  const [landingRipples, setLandingRipples] = useState([]);
+  const landingRippleCleanupRef = useRef([]);
+  const hasPlayedInitialRevealRef = useRef(menuScreen !== 'home');
+
+  useEffect(() => {
+    if (menuScreen !== 'home') {
+      setHomeRevealStep(3);
+      return;
+    }
+    if (hasPlayedInitialRevealRef.current) {
+      setHomeRevealStep(3);
+      return;
+    }
+    if (typeof window === 'undefined') {
+      hasPlayedInitialRevealRef.current = true;
+      setHomeRevealStep(3);
+      return;
+    }
+
+    let active = true;
+    let started = false;
+    let titleTimer = null;
+    let actionsTimer = null;
+    const backgroundImage = new window.Image();
+
+    const startReveal = () => {
+      if (!active || started) return;
+      started = true;
+      hasPlayedInitialRevealRef.current = true;
+      setHomeRevealStep(1);
+      titleTimer = window.setTimeout(() => {
+        if (active) setHomeRevealStep(2);
+      }, 700);
+      actionsTimer = window.setTimeout(() => {
+        if (active) setHomeRevealStep(3);
+      }, 1325);
+    };
+
+    setHomeRevealStep(0);
+    backgroundImage.onload = startReveal;
+    backgroundImage.onerror = startReveal;
+    backgroundImage.src = landingBackground;
+    if (backgroundImage.complete) startReveal();
+
+    return () => {
+      active = false;
+      if (titleTimer) window.clearTimeout(titleTimer);
+      if (actionsTimer) window.clearTimeout(actionsTimer);
+    };
+  }, [landingBackground, menuScreen]);
+
+  const backgroundVisible = menuScreen !== 'home' || homeRevealStep >= 1;
+  const titleVisible = menuScreen !== 'home' || homeRevealStep >= 2;
+  const actionsVisible = menuScreen !== 'home' || homeRevealStep >= 3;
+  const spawnLandingRipple = (event) => {
+    if (typeof window === 'undefined') return;
+    const targetBounds = event.currentTarget.getBoundingClientRect();
+    const size = Math.max(220, Math.min(Math.max(targetBounds.width, targetBounds.height) * 0.36, 360));
+    const ripple = {
+      id: Date.now() + Math.random(),
+      x: event.clientX - targetBounds.left,
+      y: event.clientY - targetBounds.top,
+      size
+    };
+
+    setLandingRipples((currentRipples) => [...currentRipples, ripple]);
+    const cleanupTimer = window.setTimeout(() => {
+      setLandingRipples((currentRipples) => currentRipples.filter((entry) => entry.id !== ripple.id));
+      landingRippleCleanupRef.current = landingRippleCleanupRef.current.filter((entry) => entry !== cleanupTimer);
+    }, 1900);
+    landingRippleCleanupRef.current.push(cleanupTimer);
+  };
+
+  useEffect(() => () => {
+    landingRippleCleanupRef.current.forEach((timer) => window.clearTimeout(timer));
+    landingRippleCleanupRef.current = [];
+  }, []);
+
+  return (
+    <div
+      className="min-h-dvh bg-slate-950 text-slate-100 relative overflow-x-hidden overflow-y-auto"
+      onPointerDown={spawnLandingRipple}
+      style={{
+        paddingTop: 'max(1rem, env(safe-area-inset-top))',
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom))',
+        WebkitTapHighlightColor: 'transparent'
+      }}
+    >
+      <div
+        className={`absolute inset-0 bg-center bg-cover bg-no-repeat transition-[opacity,transform,filter] duration-[1400ms] ease-out ${
+          backgroundVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.04]'
+        }`}
+        style={{
+          backgroundImage: `url(${landingBackground})`,
+          filter: menuScreen === 'home'
+            ? 'saturate(1.08) brightness(1.12) contrast(1.04)'
+            : 'saturate(1.02) brightness(0.92)'
+        }}
+      />
+      <div
+        className={`absolute inset-0 transition-opacity duration-[1400ms] ease-out ${
+          backgroundVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+        style={{
+          background: menuScreen === 'home'
+            ? 'linear-gradient(180deg, rgba(2,6,23,0.22) 0%, rgba(2,6,23,0.42) 52%, rgba(2,6,23,0.58) 100%)'
+            : 'linear-gradient(180deg, rgba(2,6,23,0.48) 0%, rgba(2,6,23,0.72) 100%)'
+        }}
+      />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        {landingRipples.map((ripple) => (
+          <div
+            key={ripple.id}
+            className="landing-water-ripple"
+            style={{
+              left: ripple.x,
+              top: ripple.y,
+              width: ripple.size,
+              height: ripple.size
+            }}
+          >
+            <span className="landing-water-ripple-lens" />
+            <span className="landing-water-ripple-ring landing-water-ripple-ring-1" />
+            <span className="landing-water-ripple-ring landing-water-ripple-ring-2" />
+            <span className="landing-water-ripple-ring landing-water-ripple-ring-3" />
+          </div>
+        ))}
+      </div>
+
+      <div className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        {menuScreen === 'home' ? (
+          <div className="mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-md flex-col sm:min-h-[calc(100dvh-6.5rem)]">
+            <div className="flex flex-1 flex-col items-center justify-center">
+              <div className="w-full">
+                <div className={`mb-8 text-center transition-all duration-700 ease-out ${
+                  titleVisible ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-5 opacity-0 scale-[0.97]'
+                }`}>
+                <h1
+                  className="font-arena-display text-4xl sm:text-5xl font-black text-white whitespace-nowrap"
+                  style={{
+                    textShadow: '1px 0 0 rgba(15,23,42,0.9), -1px 0 0 rgba(15,23,42,0.9), 0 1px 0 rgba(15,23,42,0.9), 0 -1px 0 rgba(15,23,42,0.9), 1px 1px 0 rgba(15,23,42,0.82), -1px 1px 0 rgba(15,23,42,0.82), 1px -1px 0 rgba(15,23,42,0.82), -1px -1px 0 rgba(15,23,42,0.82), 0 0 18px rgba(30,41,59,0.42), 0 0 36px rgba(71,85,105,0.24), 0 0 58px rgba(148,163,184,0.2), 0 0 84px rgba(226,232,240,0.12)'
+                  }}
+                >
+                  Forgetfull Fish
+                </h1>
+                </div>
+                <div className={`transition-all duration-700 ease-out ${
+                  actionsVisible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0 pointer-events-none'
+                }`}>
+                  <HomeMenuPanel
+                    variantId={homeVariant}
+                    onAdventure={onAdventureOpen}
+                    onQuickGame={onQuickGameOpen}
+                    onSettings={onOpenSettings}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className={`pb-1 pt-5 text-center text-[10px] uppercase tracking-[0.24em] text-slate-200/80 transition-all duration-700 ease-out ${
+              actionsVisible ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
+            }`}>
+              {APP_VERSION}
+            </div>
+          </div>
+        ) : (
+          <AdventureMenuPanel
+            adventurePathPoints={adventurePathPoints}
+            isAdventureComplete={isAdventureComplete}
+            nextAdventureCharacter={nextAdventureCharacter}
+            adventureProgressRatio={adventureProgressRatio}
+            adventureWinsCount={adventureWinsCount}
+            adventureStageNumber={adventureStageNumber}
+            availableAdventureStages={availableAdventureStages}
+            onBack={onBack}
+            onStartAdventure={onStartAdventure}
+            onRestartAdventure={onRestartAdventure}
+          />
+        )}
+      </div>
+
+      {showMenuSettings && (
+        <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-[rgba(2,6,23,0.78)] p-4 backdrop-blur-sm sm:p-6">
+          <div className="my-auto w-full max-w-md rounded-[2rem] bg-white/[0.08] p-5 text-left shadow-[0_32px_90px_rgba(2,6,23,0.48)] backdrop-blur-xl sm:p-6">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-arena-display text-3xl tracking-[0.08em] text-white">Settings</h2>
+                <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-slate-300/80">
+                  Sound And Visuals
+                </div>
+              </div>
+              <button onClick={onCloseSettings} className="rounded-xl bg-slate-950/88 px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-100 shadow-[0_14px_30px_rgba(2,6,23,0.34)] transition-colors hover:bg-slate-900">
+                Back
+              </button>
+            </div>
+            <div className="space-y-3">
+              <button onClick={onToggleMuted} className={`w-full rounded-[1.7rem] px-4 py-4 text-left shadow-[0_18px_36px_rgba(15,23,42,0.26)] transition-all ${muted ? 'bg-slate-950/76 text-slate-100 hover:bg-slate-900/86' : 'bg-slate-100 text-slate-950 hover:bg-white'}`}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="font-arena-display text-[1.45rem] tracking-[0.05em]">Sound</div>
+                    <div className={`mt-1 text-[10px] uppercase tracking-[0.18em] ${muted ? 'text-slate-300/80' : 'text-slate-700/70'}`}>
+                      {muted ? 'Muted' : 'Enabled'}
+                    </div>
+                  </div>
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${muted ? 'bg-slate-800 text-slate-200' : 'bg-slate-900 text-white'}`}>
+                    {muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}
+                  </div>
+                </div>
+              </button>
+              <button onClick={onToggleOfficialCards} className={`w-full rounded-[1.7rem] px-4 py-4 text-left shadow-[0_18px_36px_rgba(15,23,42,0.26)] transition-all ${useOfficialCards ? 'bg-slate-100 text-slate-950 hover:bg-white' : 'bg-slate-950/76 text-slate-100 hover:bg-slate-900/86'}`}>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <div className="font-arena-display text-[1.45rem] tracking-[0.05em]">Card Art</div>
+                    <div className={`mt-1 text-[10px] uppercase tracking-[0.18em] ${useOfficialCards ? 'text-slate-700/70' : 'text-slate-300/80'}`}>
+                      {useOfficialCards ? 'Sld Art' : 'Proxy'}
+                    </div>
+                  </div>
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${useOfficialCards ? 'bg-slate-900 text-white' : 'bg-slate-800 text-slate-200'}`}>
+                    <ImageIcon size={18}/>
+                  </div>
+                </div>
+              </button>
+            </div>
+            <div className="mt-5 text-center text-[10px] uppercase tracking-[0.24em] text-slate-300/65">
+              {APP_VERSION}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showQuickGameDialog && <QuickGameDialog selectedDifficulty={selectedDifficulty} onClose={onQuickGameClose} onStart={onQuickGameStart} />}
+    </div>
+  );
+};
+
 // --- MAIN APP COMPONENT ---
 export default function App() {
-  const [preloaded, setPreloaded] = useState(false);
   const [state, dispatch] = useReducer(gameReducer, initialState);
   const [menuMode, setMenuMode] = useState('adventure');
+  const [menuScreen, setMenuScreen] = useState('home');
+  const [landingBackground, setLandingBackground] = useState(() => loadLandingBackground());
+  const [homeVariant, setHomeVariant] = useState('tide');
   const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
   const [selectedOpponentCharacter, setSelectedOpponentCharacter] = useState(DEFAULT_AI_CHARACTER_ID);
   const [adventureWinsCount, setAdventureWinsCount] = useState(() => loadRivalProgress().adventureWinsCount);
   const [useOfficialCards, setUseOfficialCards] = useState(true);
   const [showMenuSettings, setShowMenuSettings] = useState(false);
   const [showRivalMenu, setShowRivalMenu] = useState(false);
+  const [showQuickGameDialog, setShowQuickGameDialog] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -589,9 +1362,9 @@ export default function App() {
   const selectedOpponent = getAiCharacter(selectedOpponentCharacter) || AI_CHARACTERS[0];
   const currentOpponentCharacter = state.started
     ? getAiCharacter(state.aiCharacterId)
-    : menuMode === 'adventure'
+    : menuScreen === 'adventure'
       ? adventurePreviewCharacter
-      : selectedOpponent;
+      : null;
   const currentPlayerAiCharacter = state.started ? getAiCharacter(state.playerAiCharacterId || null) : null;
   const opponentAvatarSrc = currentOpponentCharacter
     ? getCharacterPortrait(currentOpponentCharacter.id, state.difficulty || selectedDifficulty)
@@ -601,14 +1374,19 @@ export default function App() {
   const nextAdventureCharacter = getAiCharacter(ADVENTURE_ROUTE[nextAdventureIndex]) || AI_CHARACTERS[0];
   const adventureProgressRatio = Math.min(adventureWinsCount / ADVENTURE_ROUTE.length, 1);
   const adventureStageNumber = Math.min(adventureWinsCount + 1, ADVENTURE_ROUTE.length);
-  const opponentBadgeMeta = isAdventureMatch
-    ? state.aiCharacterId === ADVENTURE_BOSS_ID
-      ? 'Final Boss'
-      : `Stage ${Math.min(adventureWinsCount + 1, ADVENTURE_ROUTE.length)}/${ADVENTURE_ROUTE.length}`
-    : currentOpponentCharacter?.title || `Hand: ${state.ai.hand.length}`;
+  const availableAdventureStages = isAdventureComplete ? ADVENTURE_ROUTE.length : Math.min(adventureWinsCount + 1, ADVENTURE_ROUTE.length);
+  const adventureHeaderLabel = isAdventureMatch ? `${Math.min(adventureWinsCount + 1, ADVENTURE_ROUTE.length)}/${ADVENTURE_ROUTE.length}` : null;
 
   useEffect(() => { AudioEngine.muted = muted; }, [muted]);
   useEffect(() => { saveRivalProgress(adventureWinsCount); }, [adventureWinsCount]);
+
+  const refreshLandingBackground = () => {
+    setLandingBackground((previousBackground) => {
+      const nextBackground = getRandomLandingBackground(previousBackground);
+      storeLandingBackground(nextBackground);
+      return nextBackground;
+    });
+  };
 
   useEffect(() => {
     if (state.stackResolving && !state.pendingAction) {
@@ -645,11 +1423,11 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [state.priority, state.actionCount, state.stackResolving, state.winner, state.turn, state.phase, state.pendingAction, isAiMirror, difficultySpeed.think, difficultySpeed.pass]);
 
-  const startMatch = (mode, aiCharacterId, playerAiCharacterId = null) => {
+  const startMatch = (mode, aiCharacterId, playerAiCharacterId = null, difficultyOverride = selectedDifficulty) => {
     dispatch({
       type: 'START_GAME',
       mode,
-      difficulty: selectedDifficulty,
+      difficulty: difficultyOverride,
       aiCharacterId,
       playerAiCharacterId
     });
@@ -662,25 +1440,56 @@ export default function App() {
   const startAdventureBattle = (stageIndex = null) => {
     const resolvedIndex = stageIndex ?? (isAdventureComplete ? 0 : adventureWinsCount);
     setAdventureWinsCount(resolvedIndex);
-    startMatch('adventure', ADVENTURE_ROUTE[resolvedIndex]);
+    startMatch('adventure', ADVENTURE_ROUTE[resolvedIndex], null, ADVENTURE_FIXED_DIFFICULTY);
   };
 
   const handleAdvanceAdventure = () => {
     const nextIndex = Math.min(adventureWinsCount + 1, ADVENTURE_ROUTE.length - 1);
     setAdventureWinsCount(nextIndex);
-    startMatch('adventure', ADVENTURE_ROUTE[nextIndex]);
+    startMatch('adventure', ADVENTURE_ROUTE[nextIndex], null, ADVENTURE_FIXED_DIFFICULTY);
   };
 
   const handleRestartAdventure = () => {
     setAdventureWinsCount(0);
-    startMatch('adventure', ADVENTURE_ROUTE[0]);
+    startMatch('adventure', ADVENTURE_ROUTE[0], null, ADVENTURE_FIXED_DIFFICULTY);
   };
 
   const handleAdventureReturnToMenu = () => {
     if (state.winner === 'player') {
       setAdventureWinsCount((count) => Math.min(count + 1, ADVENTURE_ROUTE.length));
     }
+    setMenuMode('adventure');
+    setShowRivalMenu(false);
+    setMenuScreen('home');
+    refreshLandingBackground();
+    setShowQuickGameDialog(false);
+    setShowMenuSettings(false);
+    setShowExitConfirm(false);
+    setShowLog(false);
+    setZoomedCard(null);
+    setViewingZone(null);
     dispatch({ type: 'RETURN_TO_MENU' });
+  };
+
+  const returnToMenu = () => {
+    setMenuMode('adventure');
+    setShowRivalMenu(false);
+    setMenuScreen('home');
+    refreshLandingBackground();
+    setShowQuickGameDialog(false);
+    setShowMenuSettings(false);
+    setShowExitConfirm(false);
+    setShowLog(false);
+    setZoomedCard(null);
+    setViewingZone(null);
+    dispatch({ type: 'RETURN_TO_MENU' });
+  };
+
+  const handleStartQuickGame = (difficulty) => {
+    setSelectedDifficulty(difficulty);
+    setShowQuickGameDialog(false);
+    setMenuScreen('home');
+    startMatch('quick', null, null, difficulty);
   };
 
   const resolveAiPendingAction = () => {
@@ -781,7 +1590,44 @@ export default function App() {
     !card.tapped &&
     canDandanAttackDefender(card, state.ai.board);
 
-  if (!preloaded) return <Preloader onComplete={() => setPreloaded(true)} />;
+  const adventurePathPoints = ADVENTURE_MAP_LAYOUT.map(({ left, top }) => `${left},${top}`).join(' ');
+
+  if (!state.started) {
+    return (
+      <LandingScreen
+        landingBackground={landingBackground}
+        menuScreen={menuScreen}
+        homeVariant={homeVariant}
+        onSelectHomeVariant={setHomeVariant}
+        onBack={() => {
+          setMenuScreen('home');
+          refreshLandingBackground();
+        }}
+        onOpenSettings={() => setShowMenuSettings(true)}
+        showMenuSettings={showMenuSettings}
+        onCloseSettings={() => setShowMenuSettings(false)}
+        muted={muted}
+        onToggleMuted={() => setMuted(!muted)}
+        useOfficialCards={useOfficialCards}
+        onToggleOfficialCards={() => setUseOfficialCards(!useOfficialCards)}
+        showQuickGameDialog={showQuickGameDialog}
+        selectedDifficulty={selectedDifficulty}
+        onQuickGameOpen={() => setShowQuickGameDialog(true)}
+        onQuickGameClose={() => setShowQuickGameDialog(false)}
+        onQuickGameStart={handleStartQuickGame}
+        onAdventureOpen={() => setMenuScreen('adventure')}
+        adventureStageNumber={adventureStageNumber}
+        adventureWinsCount={adventureWinsCount}
+        adventurePathPoints={adventurePathPoints}
+        isAdventureComplete={isAdventureComplete}
+        nextAdventureCharacter={nextAdventureCharacter}
+        adventureProgressRatio={adventureProgressRatio}
+        availableAdventureStages={availableAdventureStages}
+        onStartAdventure={() => startAdventureBattle()}
+        onRestartAdventure={handleRestartAdventure}
+      />
+    );
+  }
 
   if (!state.started) {
     return (
@@ -895,8 +1741,8 @@ export default function App() {
                             {isAdventureComplete
                               ? 'Adventure Complete'
                               : nextAdventureCharacter.id === ADVENTURE_BOSS_ID
-                                ? `Boss Fight ${ADVENTURE_ROUTE.length}/${ADVENTURE_ROUTE.length}`
-                                : `Stage ${adventureStageNumber}/${ADVENTURE_ROUTE.length}`}
+                                ? `${ADVENTURE_ROUTE.length}/${ADVENTURE_ROUTE.length}`
+                                : `${adventureStageNumber}/${ADVENTURE_ROUTE.length}`}
                           </div>
                           <div className="text-lg font-black text-white truncate">
                             {isAdventureComplete ? 'Gauntlet Cleared' : nextAdventureCharacter.name}
@@ -1116,7 +1962,7 @@ export default function App() {
           ) : (
             <>
               <button onClick={() => dispatch({ type: 'START_GAME', mode: state.gameMode, difficulty: state.difficulty, aiCharacterId: state.aiCharacterId, playerAiCharacterId: state.playerAiCharacterId })} className="w-full py-3 bg-[#38bdf8] hover:bg-[#22c7ff] text-slate-950 rounded-xl font-bold tracking-widest uppercase border border-sky-200/70 shadow-[0_0_24px_rgba(56,189,248,0.28)] transition-colors">Play Again</button>
-              <button onClick={() => dispatch({ type: 'RETURN_TO_MENU' })} className="w-full py-3 bg-slate-900/92 hover:bg-slate-800 text-slate-100 rounded-xl font-bold tracking-widest uppercase border border-slate-600 transition-colors">Back To Menu</button>
+              <button onClick={returnToMenu} className="w-full py-3 bg-slate-900/92 hover:bg-slate-800 text-slate-100 rounded-xl font-bold tracking-widest uppercase border border-slate-600 transition-colors">Back To Menu</button>
             </>
           )}
         </div>
@@ -1185,7 +2031,7 @@ export default function App() {
       )}
 
       {/* HEADER TRAY */}
-      <div className="flex justify-between items-center p-2 bg-slate-950/90 border-b border-slate-800 z-50 shrink-0 shadow-md backdrop-blur-sm">
+      <div className="relative flex justify-between items-center p-2 bg-slate-950/90 border-b border-slate-800 z-50 shrink-0 shadow-md backdrop-blur-sm">
         <div className="flex gap-2">
            <button onClick={() => setUseOfficialCards(!useOfficialCards)} className={`px-2 py-1.5 rounded flex items-center gap-1.5 text-[10px] font-bold transition-colors ${useOfficialCards ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
              <ImageIcon size={12}/> <span className="hidden sm:inline">{useOfficialCards ? 'SLD Art' : 'Proxy'}</span>
@@ -1200,6 +2046,12 @@ export default function App() {
               <ArrowLeftRight size={12}/> <span className="hidden sm:inline">Sort</span>
            </button>
         </div>
+
+        {adventureHeaderLabel && (
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none rounded-full border border-slate-600 bg-slate-900/95 px-3 py-1 text-[9px] sm:text-[10px] font-black uppercase tracking-[0.16em] text-slate-100 shadow-lg">
+            {adventureHeaderLabel}
+          </div>
+        )}
         
         <div className="flex gap-2">
            <button onClick={() => setViewingZone('deck')} className="px-3 py-1.5 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-blue-300 rounded flex items-center gap-1.5 text-[10px] font-mono font-bold transition-colors shadow-inner">
@@ -1505,7 +2357,7 @@ export default function App() {
               <button onClick={() => setShowExitConfirm(false)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors">
                 Cancel
               </button>
-              <button onClick={() => { setShowExitConfirm(false); dispatch({ type: 'RETURN_TO_MENU' }); }} className="flex-1 py-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-xl transition-colors">
+              <button onClick={returnToMenu} className="flex-1 py-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-xl transition-colors">
                 Exit
               </button>
             </div>
@@ -1543,9 +2395,7 @@ export default function App() {
                  <div className="absolute -bottom-1 -right-1 bg-red-900 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full border border-red-500 shadow-lg">{state.ai.life}</div>
               </div>
               <div className="flex flex-col">
-                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{isAiMirror ? 'AI North' : 'Opponent'}</span>
                  <span className="text-xs text-slate-100 font-black tracking-[0.08em] uppercase">{currentOpponentCharacter?.name || AI_DIFFICULTY_LABELS[state.difficulty] || 'Opponent'}</span>
-                 <span className="text-[10px] text-slate-400">{opponentBadgeMeta}</span>
                  <span className="text-[10px] text-slate-200 font-mono flex items-center gap-1">Hand: {state.ai.hand.length}</span>
               </div>
            </div>
@@ -1577,18 +2427,15 @@ export default function App() {
                 </div>
               </div>
            </div>
-           <div className="h-[50%] flex gap-2 justify-center items-center px-4 custom-scrollbar mt-1">
-              {getBoardPermanentStacks(state.ai.board).map(({ key, permanent, attachedAuras }) => (
-                <AttachedPermanentStack
-                  key={key}
-                  permanent={permanent}
-                  attachedAuras={attachedAuras}
-                  official={useOfficialCards}
-                  state={state}
-                  onZoom={setZoomedCard}
-                  onClick={(card) => handleCardClick(card, 'board')}
-                />
-              ))}
+           <div className="h-[50%] flex items-center px-4 mt-1">
+              <BoardPermanentRow
+                stacks={getBoardPermanentStacks(state.ai.board)}
+                official={useOfficialCards}
+                state={state}
+                onZoom={setZoomedCard}
+                onClick={(card) => handleCardClick(card, 'board')}
+                className="custom-scrollbar"
+              />
            </div>
         </div>
 
@@ -1636,19 +2483,15 @@ export default function App() {
               </div>
            </div>
 
-           <div className="h-[30%] flex gap-2 justify-center items-center px-4 mt-6 sm:mt-8">
-              {getBoardPermanentStacks(state.player.board).map(({ key, permanent, attachedAuras }) => (
-                 <AttachedPermanentStack
-                   key={key}
-                   permanent={permanent}
-                   attachedAuras={attachedAuras}
-                   official={useOfficialCards}
-                   state={state}
-                   onZoom={setZoomedCard}
-                   onClick={(card) => handleCardClick(card, 'board')}
-                   subtleHighlight={canPlayerDeclareAttack(permanent)}
-                 />
-              ))}
+           <div className="h-[30%] flex items-center px-4 mt-6 sm:mt-8">
+              <BoardPermanentRow
+                stacks={getBoardPermanentStacks(state.player.board)}
+                official={useOfficialCards}
+                state={state}
+                onZoom={setZoomedCard}
+                onClick={(card) => handleCardClick(card, 'board')}
+                getSubtleHighlight={canPlayerDeclareAttack}
+              />
            </div>
            <div className="h-[25%] min-h-[108px] sm:min-h-[132px] flex items-center px-3 sm:px-4 mt-1 overflow-visible">
               <div className="w-full overflow-x-auto overflow-y-hidden custom-scrollbar py-3">
