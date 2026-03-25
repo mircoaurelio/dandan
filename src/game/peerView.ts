@@ -55,6 +55,7 @@ const createHiddenCard = (id) => ({
 });
 
 const hideCards = (cards = [], prefix) => cards.map((_, index) => createHiddenCard(`${prefix}-${index + 1}`));
+const createHiddenCardList = (count = 0, prefix) => Array.from({ length: Math.max(0, count) }, (_, index) => createHiddenCard(`${prefix}-${index + 1}`));
 
 const swapPendingAction = (pendingAction) => {
   if (!pendingAction) return null;
@@ -113,12 +114,14 @@ export const buildPeerGuestViewState = (canonicalState) => {
 
   const guestViewState = {
     ...state,
+    sharedDeckCount: state.deck?.length || 0,
+    opponentHandCount: state.player?.hand?.length || 0,
     player: state.ai,
     ai: {
       ...state.player,
-      hand: hideCards(state.player?.hand, 'opponent-hand')
+      hand: []
     },
-    deck: hideCards(state.deck, 'shared-deck'),
+    deck: [],
     stack: Array.isArray(state.stack) ? state.stack.map(swapStackEntry) : [],
     turn: swapSeat(state.turn),
     priority: swapSeat(state.priority),
@@ -136,4 +139,22 @@ export const buildPeerGuestViewState = (canonicalState) => {
   };
 
   return guestViewState;
+};
+
+export const inflatePeerGuestViewState = (guestViewState) => {
+  const state = structuredClone(guestViewState);
+  const opponentHandCount = Number.isFinite(state.opponentHandCount)
+    ? state.opponentHandCount
+    : state.ai?.hand?.length || 0;
+  const sharedDeckCount = Number.isFinite(state.sharedDeckCount)
+    ? state.sharedDeckCount
+    : state.deck?.length || 0;
+
+  state.ai = {
+    ...state.ai,
+    hand: createHiddenCardList(opponentHandCount, 'opponent-hand')
+  };
+  state.deck = createHiddenCardList(sharedDeckCount, 'shared-deck');
+
+  return state;
 };

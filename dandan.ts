@@ -4,7 +4,7 @@ import { Peer } from 'peerjs';
 import $ from 'jquery';
 import 'jquery.ripples';
 import { AI_CHARACTERS, AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, AI_SPEED, CARDS, DANDAN_NAME, DEFAULT_AI_CHARACTER_ID, FULL_DECKLIST, LAND_TYPE_CHOICES, PREDICT_OPTIONS, SHARED_DECK_SIZE, canDandanAttackDefender, checkHasActions, chooseAiAction, controlsIsland, createGameReducer, getAiCharacter, getAiPendingActions, getAiPolicyForActor, getAvailableMana, getManaPool, initialState, isActivatable, isCastable, isCyclable, isValidTarget } from './src/game/engine';
-import { buildPeerGuestViewState, mapGuestActionToCanonical } from './src/game/peerView';
+import { buildPeerGuestViewState, inflatePeerGuestViewState, mapGuestActionToCanonical } from './src/game/peerView';
 import archivistPortrait from './img/Archivist.png';
 import cartographerPortrait from './img/Cartographer.png';
 import eelPortrait from './img/Eel.png';
@@ -608,6 +608,29 @@ const canApplyGuestPeerAction = (state, action) => {
   if (!action || !PEER_GAME_ACTIONS.has(action.type)) return false;
   if (!state?.started || state.gameMode !== 'peer' || state.winner) return false;
   return getPeerGuestActionSeat(state, action) === 'ai';
+};
+const canOptimisticallyApplyGuestAction = (state, action) => {
+  if (!action) return false;
+  switch (action.type) {
+    case 'CANCEL_PENDING_ACTION':
+    case 'CANCEL_TARGETING':
+    case 'CAST_SPELL':
+    case 'CAST_WITH_TARGET':
+    case 'KEEP_HAND':
+    case 'PROMPT_ACTIVATE_LAND':
+    case 'PROMPT_HAND_LAND_ACTION':
+    case 'REORDER_HALIMAR':
+    case 'SURRENDER':
+    case 'TOGGLE_ATTACK':
+    case 'TOGGLE_BLOCK':
+    case 'TOGGLE_PENDING_SELECT':
+    case 'UPDATE_TELLING_TIME':
+      return true;
+    case 'SUBMIT_PENDING_ACTION':
+      return ['LAND_TYPE_CHOICE', 'BRAINSTORM', 'DISCARD', 'TELLING_TIME', 'HALIMAR_DEPTHS', 'MULLIGAN_BOTTOM', 'DISCARD_CLEANUP', 'MYSTIC_SANCTUARY'].includes(state?.pendingAction?.type);
+    default:
+      return false;
+  }
 };
 const clampAdventureProgress = (value) => Math.max(0, Math.min(Number.isFinite(value) ? value : 0, ADVENTURE_ROUTE.length));
 const getRandomLandingBackground = (exclude = null) => {
@@ -2332,6 +2355,9 @@ export default function App() {
         }));
         return;
       }
+      if (canOptimisticallyApplyGuestAction(latestStateRef.current, action)) {
+        rawDispatch(action);
+      }
       connection.send({
         type: 'peer-action',
         protocol: PEER_PROTOCOL_VERSION,
@@ -2577,7 +2603,7 @@ export default function App() {
         return;
       }
       if (message.type === 'state-sync' && message.state) {
-        rawDispatch({ type: 'HYDRATE_PEER_STATE', state: message.state });
+        rawDispatch({ type: 'HYDRATE_PEER_STATE', state: inflatePeerGuestViewState(message.state) });
         updatePeerUi({
           open: false,
           role: 'guest',
