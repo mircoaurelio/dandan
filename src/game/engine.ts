@@ -3714,7 +3714,10 @@ export const createGameReducer = (effects = defaultEffects) => {
         if (deadAttackers.length > 0) {
           s[attacker].board = s[attacker].board.filter(c => !deadAttackers.includes(c));
           s[defender].board = s[defender].board.filter(c => !deadBlockers.includes(c));
-          s.graveyard.push(...deadAttackers, ...deadBlockers);
+          s.graveyard.push(
+            ...deadAttackers.map(card => preparePermanentForZoneChange(card)),
+            ...deadBlockers.map(card => preparePermanentForZoneChange(card))
+          );
         }
         
         s[attacker].board.forEach(c => { 

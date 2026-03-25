@@ -920,6 +920,52 @@ test('declared attackers can be toggled off before combat is confirmed', () => {
   expect(deselected.tapped === false, 'Deselected Dandan should remain untapped');
 });
 
+test('combat deaths clear attack and block markers before hitting the graveyard', () => {
+  const attackingDandan = makeCard(CARDS.DANDAN, {
+    id: 'combat-death-attacker',
+    owner: 'player',
+    summoningSickness: false,
+    attacking: true
+  });
+  const blockingDandan = makeCard(CARDS.DANDAN, {
+    id: 'combat-death-blocker',
+    owner: 'ai',
+    summoningSickness: false,
+    blocking: true
+  });
+  const playerIsland = makeCard(CARDS.ISLAND_1, { id: 'combat-death-player-island' });
+  const aiIsland = makeCard(CARDS.ISLAND_2, { id: 'combat-death-ai-island' });
+
+  let state = makeState({
+    turn: 'player',
+    phase: 'declare_blockers',
+    priority: 'ai',
+    player: {
+      life: 20,
+      hand: [],
+      board: [playerIsland, attackingDandan],
+      landsPlayed: 0
+    },
+    ai: {
+      life: 20,
+      hand: [],
+      board: [aiIsland, blockingDandan],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'NEXT_PHASE' });
+
+  const deadAttacker = state.graveyard.find((card) => card.id === attackingDandan.id);
+  const deadBlocker = state.graveyard.find((card) => card.id === blockingDandan.id);
+  expect(deadAttacker, 'Dead attacker should be moved to the graveyard');
+  expect(deadBlocker, 'Dead blocker should be moved to the graveyard');
+  expect(deadAttacker.attacking === false, 'Dead attacker should not keep the attacking marker in graveyard');
+  expect(deadAttacker.blocking === false, 'Dead attacker should not keep the blocking marker in graveyard');
+  expect(deadBlocker.attacking === false, 'Dead blocker should not keep the attacking marker in graveyard');
+  expect(deadBlocker.blocking === false, 'Dead blocker should not keep the blocking marker in graveyard');
+});
+
 test('AI always declares a legal Dandan attack when combat is open', () => {
   const aiDandan = makeCard(CARDS.DANDAN, {
     id: 'ai-attacker',
