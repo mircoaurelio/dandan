@@ -197,6 +197,23 @@ const PhaseTracker = ({ currentPhase, turn }) => {
   );
 };
 
+const MatchClockPill = ({ valueMs, running }) => {
+  const toneClass = valueMs <= 10_000
+    ? 'border-rose-400/55 bg-rose-500/18 text-rose-100'
+    : valueMs <= 30_000
+      ? 'border-amber-300/55 bg-amber-500/16 text-amber-100'
+      : running
+        ? 'border-emerald-300/45 bg-emerald-500/14 text-emerald-100'
+        : 'border-slate-600/80 bg-slate-950/72 text-slate-200';
+
+  return (
+    <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(2,6,23,0.28)] ${toneClass}`}>
+      <span className="opacity-80">Clock</span>
+      <span className="font-mono text-xs tracking-[0.08em]">{formatPeerClockMs(valueMs)}</span>
+    </div>
+  );
+};
+
 const getCardTypeRank = (card) => {
   if (card?.type?.includes('Creature')) return 0;
   if (card?.type?.includes('Instant')) return 1;
@@ -465,6 +482,9 @@ const PEER_SESSION_STORAGE_KEY = 'forgetful-fish-peer-session-v1';
 const PEER_PROTOCOL_VERSION = 1;
 const PEER_RECONNECT_DELAY_MS = 1600;
 const PEER_DISCONNECT_GRACE_MS = 12000;
+const PEER_CLOCK_BASE_MS = 5 * 60 * 1000;
+const PEER_CLOCK_INCREMENT_MS = 5 * 1000;
+const PEER_CLOCK_MAX_MS = PEER_CLOCK_BASE_MS + PEER_CLOCK_INCREMENT_MS;
 const LANDING_BACKGROUNDS = [wall1Background, wall2Background, wall3Background, wall4Background];
 const MENU_PRELOAD_URLS = Array.from(new Set([
   ...Object.values(DIFFICULTY_ART),
@@ -608,6 +628,87 @@ const canApplyGuestPeerAction = (state, action) => {
   if (!action || !PEER_GAME_ACTIONS.has(action.type)) return false;
   if (!state?.started || state.gameMode !== 'peer' || state.winner) return false;
   return getPeerGuestActionSeat(state, action) === 'ai';
+};
+const clampPeerClockMs = (value, maxMs = PEER_CLOCK_MAX_MS) => Math.max(0, Math.min(Math.round(value), maxMs));
+const createPeerClockState = (now = Date.now()) => ({
+  enabled: true,
+  baseMs: PEER_CLOCK_BASE_MS,
+  incrementMs: PEER_CLOCK_INCREMENT_MS,
+  maxMs: PEER_CLOCK_MAX_MS,
+  remainingMs: { player: PEER_CLOCK_BASE_MS, ai: PEER_CLOCK_BASE_MS },
+  runningFor: null,
+  turn: 'player',
+  lastStartedAt: null,
+  updatedAt: now
+});
+const getPeerClockRunner = (viewState) => {
+  if (!viewState?.started || viewState.gameMode !== 'peer' || viewState.winner) return null;
+  if (viewState.pendingAction?.player) return viewState.pendingAction.player;
+  if (viewState.pendingTargetSelection?.player) return viewState.pendingTargetSelection.player;
+  if (viewState.stackResolving) return null;
+  return viewState.priority || null;
+};
+const settlePeerClock = (clock, now = Date.now()) => {
+  if (!clock) return null;
+  if (!clock.runningFor || !clock.lastStartedAt) return { ...clock, updatedAt: now };
+  const elapsed = Math.max(0, now - clock.lastStartedAt);
+  if (!elapsed) return { ...clock, updatedAt: now };
+  return {
+    ...clock,
+    remainingMs: {
+      ...clock.remainingMs,
+      [clock.runningFor]: clampPeerClockMs((clock.remainingMs?.[clock.runningFor] || 0) - elapsed, clock.maxMs)
+    },
+    updatedAt: now
+  };
+};
+const syncPeerClockWithState = (clock, viewState, now = Date.now()) => {
+  const baseClock = clock ? structuredClone(clock) : createPeerClockState(now);
+  const settledClock = settlePeerClock(baseClock, now);
+  const nextClock = {
+    ...settledClock,
+    remainingMs: { ...(settledClock?.remainingMs || createPeerClockState(now).remainingMs) }
+  };
+
+  if (nextClock.turn && viewState?.turn && nextClock.turn !== viewState.turn) {
+    nextClock.remainingMs[nextClock.turn] = clampPeerClockMs(
+      (nextClock.remainingMs?.[nextClock.turn] || 0) + (nextClock.incrementMs || PEER_CLOCK_INCREMENT_MS),
+      nextClock.maxMs || PEER_CLOCK_MAX_MS
+    );
+  }
+
+  const nextRunner = getPeerClockRunner(viewState);
+  nextClock.turn = viewState?.turn || nextClock.turn;
+  nextClock.runningFor = nextRunner;
+  nextClock.lastStartedAt = nextRunner ? now : null;
+  nextClock.updatedAt = now;
+  return nextClock;
+};
+const getDisplayedPeerClockMs = (clock, seat, now = Date.now()) => {
+  if (!clock) return 0;
+  let remainingMs = clock.remainingMs?.[seat] || 0;
+  if (clock.runningFor === seat && clock.lastStartedAt) {
+    remainingMs -= Math.max(0, now - clock.lastStartedAt);
+  }
+  return Math.max(0, Math.round(remainingMs));
+};
+const formatPeerClockMs = (value) => {
+  const totalSeconds = Math.ceil(Math.max(0, value) / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+const buildPeerGuestClockState = (clock) => {
+  if (!clock) return null;
+  return {
+    ...structuredClone(clock),
+    remainingMs: {
+      player: clock.remainingMs?.ai || 0,
+      ai: clock.remainingMs?.player || 0
+    },
+    runningFor: clock.runningFor === 'player' ? 'ai' : clock.runningFor === 'ai' ? 'player' : clock.runningFor,
+    turn: clock.turn === 'player' ? 'ai' : clock.turn === 'ai' ? 'player' : clock.turn
+  };
 };
 const canOptimisticallyApplyGuestAction = (state, action) => {
   if (!action) return false;
@@ -2310,6 +2411,8 @@ export default function App() {
   const [draggedIdx, setDraggedIdx] = useState(null);
   const [zoomedCard, setZoomedCard] = useState(null); 
   const [viewingZone, setViewingZone] = useState(null); 
+  const [peerClock, setPeerClock] = useState(null);
+  const [clockRenderNow, setClockRenderNow] = useState(() => Date.now());
   const [peerUi, setPeerUi] = useState(() => ({
     open: Boolean(inviteParams.roomId && inviteParams.token),
     mode: inviteParams.roomId && inviteParams.token ? 'join' : (peerSessionDraft?.lastMode === 'join' ? 'join' : 'host'),
@@ -2333,6 +2436,7 @@ export default function App() {
   const peerConnectionRef = useRef(null);
   const peerReconnectTimerRef = useRef(null);
   const peerDisconnectTimerRef = useRef(null);
+  const peerClockRef = useRef(null);
   const autoJoinInviteRef = useRef(Boolean(inviteParams.roomId && inviteParams.token));
   const peerSessionRef = useRef({
     role: null,
@@ -2377,6 +2481,11 @@ export default function App() {
   const selectedOpponent = getAiCharacter(selectedOpponentCharacter) || AI_CHARACTERS[0];
   const currentMulliganCount = isPeerMatch ? (state.peerMulligan?.counts?.player || state.mulliganCount || 0) : (state.mulliganCount || 0);
   const canShareFriendInvite = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const showPeerClock = isPeerMatch && Boolean(peerClock?.enabled);
+  const displayedPlayerClockMs = showPeerClock ? getDisplayedPeerClockMs(peerClock, 'player', clockRenderNow) : null;
+  const displayedOpponentClockMs = showPeerClock ? getDisplayedPeerClockMs(peerClock, 'ai', clockRenderNow) : null;
+  const isPlayerClockRunning = peerClock?.runningFor === 'player';
+  const isOpponentClockRunning = peerClock?.runningFor === 'ai';
   const canPlayerAttemptAttackSelection = !isAiMirror &&
     state.turn === 'player' &&
     state.phase === 'declare_attackers' &&
@@ -2416,6 +2525,9 @@ export default function App() {
   useEffect(() => {
     latestStateRef.current = state;
   }, [state]);
+  useEffect(() => {
+    peerClockRef.current = peerClock;
+  }, [peerClock]);
   useEffect(() => { AudioEngine.muted = muted; }, [muted]);
   useEffect(() => { saveRivalProgress(adventureWinsCount); }, [adventureWinsCount]);
   useEffect(() => {
@@ -2447,9 +2559,64 @@ export default function App() {
     preloadImageUrls(APP_PRELOAD_URLS);
   }, []);
   useEffect(() => {
+    if (state.gameMode !== 'peer' || !state.started) {
+      peerClockRef.current = null;
+      setPeerClock(null);
+      return;
+    }
+    if (peerUi.role === 'host') {
+      const now = Date.now();
+      const nextClock = syncPeerClockWithState(peerClockRef.current || createPeerClockState(now), state, now);
+      peerClockRef.current = nextClock;
+      setPeerClock(nextClock);
+    }
+  }, [state.started, state.gameMode, state.winner, state.turn, state.priority, state.phase, state.stackResolving, state.pendingAction, state.pendingTargetSelection, peerUi.role]);
+  useEffect(() => {
+    if (!showPeerClock || !state.started || state.winner) {
+      setClockRenderNow(Date.now());
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setClockRenderNow(Date.now());
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [showPeerClock, state.started, state.winner]);
+  useEffect(() => {
+    if (peerUi.role !== 'host' || state.gameMode !== 'peer' || !state.started || state.winner) return;
+    const timer = window.setInterval(() => {
+      const currentClock = peerClockRef.current;
+      const currentState = latestStateRef.current;
+      if (!currentClock?.runningFor || currentState?.winner || currentState?.gameMode !== 'peer') return;
+      const expiredSeat = currentClock.runningFor;
+      const remainingMs = getDisplayedPeerClockMs(currentClock, expiredSeat, Date.now());
+      if (remainingMs > 0) return;
+      const now = Date.now();
+      const settledClock = settlePeerClock(currentClock, now);
+      const nextClock = {
+        ...settledClock,
+        remainingMs: {
+          ...settledClock.remainingMs,
+          [expiredSeat]: 0
+        },
+        runningFor: null,
+        lastStartedAt: null,
+        updatedAt: now
+      };
+      peerClockRef.current = nextClock;
+      setPeerClock(nextClock);
+      rawDispatch({ type: 'CLOCK_EXPIRE', player: expiredSeat });
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [peerUi.role, state.gameMode, state.started, state.winner]);
+  useEffect(() => {
     if (peerUi.role !== 'host' || state.gameMode !== 'peer') return;
     pushPeerStateSync(state);
   }, [state, peerUi.role]);
+  useEffect(() => {
+    if (state.gameMode !== 'peer' || peerUi.role) return;
+    peerClockRef.current = null;
+    setPeerClock(null);
+  }, [state.gameMode, peerUi.role]);
   useEffect(() => {
     if (!autoJoinInviteRef.current) return;
     if (!peerUi.open || peerUi.mode !== 'join' || peerUi.role || peerUi.status !== 'idle') return;
@@ -2501,6 +2668,7 @@ export default function App() {
       type: 'state-sync',
       protocol: PEER_PROTOCOL_VERSION,
       state: buildPeerGuestViewState(sourceState),
+      clock: buildPeerGuestClockState(peerClockRef.current),
       sentAt: Date.now()
     });
   };
@@ -2526,6 +2694,8 @@ export default function App() {
 
     peerConnectionRef.current = null;
     peerRef.current = null;
+    peerClockRef.current = null;
+    setPeerClock(null);
     savePeerSessionDraft(null);
 
     if (resetGame) {
@@ -2604,6 +2774,8 @@ export default function App() {
       }
       if (message.type === 'state-sync' && message.state) {
         rawDispatch({ type: 'HYDRATE_PEER_STATE', state: inflatePeerGuestViewState(message.state) });
+        peerClockRef.current = message.clock || null;
+        setPeerClock(message.clock || null);
         updatePeerUi({
           open: false,
           role: 'guest',
@@ -4227,6 +4399,11 @@ export default function App() {
               <div className="flex flex-col">
                  <span className="text-xs text-slate-100 font-black tracking-[0.08em] uppercase">{isPeerMatch ? 'Friend' : (currentOpponentCharacter?.name || AI_DIFFICULTY_LABELS[state.difficulty] || 'Opponent')}</span>
                  <span className="text-[10px] text-slate-200 font-mono flex items-center gap-1">Hand: {state.ai.hand.length}</span>
+                 {showPeerClock && displayedOpponentClockMs !== null && (
+                   <div className="mt-1">
+                     <MatchClockPill valueMs={displayedOpponentClockMs} running={isOpponentClockRunning} />
+                   </div>
+                 )}
               </div>
            </div>
 
@@ -4311,6 +4488,11 @@ export default function App() {
                       </span>
                     )}
                  </div>
+                 {showPeerClock && displayedPlayerClockMs !== null && (
+                   <div className="mt-1">
+                     <MatchClockPill valueMs={displayedPlayerClockMs} running={isPlayerClockRunning} />
+                   </div>
+                 )}
               </div>
            </div>
 

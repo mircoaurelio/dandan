@@ -2984,6 +2984,16 @@ export const createGameReducer = (effects = defaultEffects) => {
         log: [`${action.player} surrendered.`, ...(s.log || [])].slice(0, 15)
       };
 
+    case 'CLOCK_EXPIRE':
+      return {
+        ...s,
+        winner: action.player === 'player' ? 'ai' : 'player',
+        pendingAction: null,
+        pendingTargetSelection: null,
+        stackResolving: false,
+        log: [`${getSeatLabel(action.player)} ran out of time.`, ...(s.log || [])].slice(0, 15)
+      };
+
     case 'START_GAME':
       effects.initAudio();
       const gameMode = action.mode || 'player';
