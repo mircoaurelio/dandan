@@ -627,6 +627,45 @@ const preloadImageUrls = (urls, onProgress = null) => {
   });
 };
 
+const LAND_TYPE_BUTTON_STYLES = {
+  Plains: 'bg-amber-100 hover:bg-amber-50 text-slate-900',
+  Island: 'bg-sky-600 hover:bg-sky-500 text-white',
+  Swamp: 'bg-violet-700 hover:bg-violet-600 text-white',
+  Mountain: 'bg-rose-700 hover:bg-rose-600 text-white',
+  Forest: 'bg-emerald-700 hover:bg-emerald-600 text-white'
+};
+const getStackEntryTargetDescriptor = (entry) => {
+  const target = entry?.target;
+  if (!target) return null;
+  if (target.card?.id) {
+    return { zone: 'stack', id: target.card.id };
+  }
+  if (target.id) {
+    return { zone: 'board', id: target.id };
+  }
+  return null;
+};
+const getStackTargetDescriptors = (state, selectedStackEntryId = null) => {
+  const descriptors = [];
+  const pushDescriptor = (descriptor) => {
+    if (!descriptor) return;
+    if (descriptors.some(existing => existing.zone === descriptor.zone && existing.id === descriptor.id)) return;
+    descriptors.push(descriptor);
+  };
+
+  pushDescriptor(getStackEntryTargetDescriptor(state?.stack?.[state.stack.length - 1]));
+  if (selectedStackEntryId) {
+    const selectedEntry = state?.stack?.find(entry => entry.card?.id === selectedStackEntryId) || null;
+    pushDescriptor(getStackEntryTargetDescriptor(selectedEntry));
+  }
+
+  return descriptors;
+};
+const isStackTargetHighlighted = (card, zone, state, selectedStackEntryId = null) => {
+  return getStackTargetDescriptors(state, selectedStackEntryId)
+    .some(descriptor => descriptor.zone === zone && descriptor.id === card?.id);
+};
+
 // --- PRELOADER COMPONENT ---
 const Preloader = ({ onComplete }) => {
   const [revealStep, setRevealStep] = useState(0);
@@ -719,7 +758,7 @@ const Preloader = ({ onComplete }) => {
 };
 
 // --- RESPONSIVE CARD COMPONENT ---
-const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false, official = false, draggable = false, onDragStart, onDragOver, onDrop, castable = false, targetable = false, activatable = false, subtleHighlight = false, disableHoverLift = false }) => {
+const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false, official = false, draggable = false, onDragStart, onDragOver, onDrop, castable = false, targetable = false, stackTargeted = false, activatable = false, subtleHighlight = false, disableHoverLift = false }) => {
   const holdTimer = useRef(null);
   const [isPressing, setIsPressing] = useState(false);
   const printedLandType = card.type?.includes('Island') ? 'Island' : null;
@@ -762,6 +801,8 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
   
   if (targetable) {
       ringClass = 'ring-2 ring-red-500 ring-offset-2 ring-offset-slate-950 shadow-[0_0_15px_rgba(239,68,68,0.8)] animate-pulse cursor-crosshair';
+  } else if (stackTargeted) {
+      ringClass = 'ring-2 ring-red-500 ring-offset-2 ring-offset-slate-950 shadow-[0_0_14px_rgba(239,68,68,0.55)]';
   } else if (castable && zone === 'hand') {
       ringClass = 'ring-2 ring-blue-400 ring-offset-1 ring-offset-slate-950 shadow-[0_0_15px_rgba(96,165,250,0.6)]';
       interactionClass = disableHoverLift ? 'cursor-pointer' : 'cursor-pointer hover:-translate-y-4';
@@ -857,7 +898,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
 };
 
 // --- STACKED LAND COMPONENT ---
-const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activatablePlayer = null }) => {
+const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activatablePlayer = null, selectedStackEntryId = null }) => {
   if (!lands || lands.length === 0) return null;
   const total = lands.length;
   const { mobile, desktop } = getLandStackStep(total);
@@ -894,6 +935,7 @@ const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activ
             onZoom={onZoom}
             onClick={onClick}
             targetable={isValidTarget(land, zone, state)}
+            stackTargeted={isStackTargetHighlighted(land, zone, state, selectedStackEntryId)}
             activatable={Boolean(activatablePlayer) && isActivatable(land, state, activatablePlayer)}
           />
         </div>
@@ -912,7 +954,7 @@ const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activ
   );
 };
 
-const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state, onZoom, onClick, subtleHighlight = false }) => {
+const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state, onZoom, onClick, subtleHighlight = false, selectedStackEntryId = null }) => {
   const sortedAuras = [...attachedAuras].sort((a, b) => (a.attachmentOrder || 0) - (b.attachmentOrder || 0));
   const auraCount = sortedAuras.length;
 
@@ -940,6 +982,7 @@ const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state
             onZoom={onZoom}
             onClick={onClick}
             targetable={isValidTarget(aura, 'board', state)}
+            stackTargeted={isStackTargetHighlighted(aura, 'board', state, selectedStackEntryId)}
           />
         </div>
       ))}
@@ -953,6 +996,7 @@ const AttachedPermanentStack = ({ permanent, attachedAuras = [], official, state
           onZoom={onZoom}
           onClick={onClick}
           targetable={isValidTarget(permanent, 'board', state)}
+          stackTargeted={isStackTargetHighlighted(permanent, 'board', state, selectedStackEntryId)}
           subtleHighlight={subtleHighlight}
         />
       </div>
@@ -974,7 +1018,7 @@ const getCompactPermanentPairMetrics = (stackPair) => {
   return { stepMobile, stepDesktop, mobileWidth, desktopWidth };
 };
 
-const CompactPermanentPair = ({ stackPair, official, state, onZoom, onClick, getSubtleHighlight = () => false }) => {
+const CompactPermanentPair = ({ stackPair, official, state, onZoom, onClick, getSubtleHighlight = () => false, selectedStackEntryId = null }) => {
   const { stepMobile, stepDesktop, mobileWidth, desktopWidth } = getCompactPermanentPairMetrics(stackPair);
 
   return (
@@ -997,6 +1041,7 @@ const CompactPermanentPair = ({ stackPair, official, state, onZoom, onClick, get
             onZoom={onZoom}
             onClick={onClick}
             subtleHighlight={getSubtleHighlight(permanent)}
+            selectedStackEntryId={selectedStackEntryId}
           />
         </div>
       ))}
@@ -1004,7 +1049,7 @@ const CompactPermanentPair = ({ stackPair, official, state, onZoom, onClick, get
   );
 };
 
-const BoardPermanentRow = ({ stacks, official, state, onZoom, onClick, getSubtleHighlight = () => false, className = '' }) => {
+const BoardPermanentRow = ({ stacks, official, state, onZoom, onClick, getSubtleHighlight = () => false, className = '', selectedStackEntryId = null }) => {
   if (stacks.length === 0) {
     return <div className={`w-full ${className}`.trim()} />;
   }
@@ -1024,6 +1069,7 @@ const BoardPermanentRow = ({ stacks, official, state, onZoom, onClick, getSubtle
             onZoom={onZoom}
             onClick={onClick}
             subtleHighlight={getSubtleHighlight(permanent)}
+            selectedStackEntryId={selectedStackEntryId}
           />
         ))}
       </div>
@@ -1048,6 +1094,7 @@ const BoardPermanentRow = ({ stacks, official, state, onZoom, onClick, getSubtle
               onZoom={onZoom}
               onClick={onClick}
               getSubtleHighlight={getSubtleHighlight}
+              selectedStackEntryId={selectedStackEntryId}
             />
           ))}
         </div>
@@ -1844,6 +1891,7 @@ export default function App() {
   const [dandanCastConfirm, setDandanCastConfirm] = useState(null);
   const [dandanAttackBlockedDialog, setDandanAttackBlockedDialog] = useState(null);
   const [isBattlefieldPeekActive, setIsBattlefieldPeekActive] = useState(false);
+  const [selectedStackEntryId, setSelectedStackEntryId] = useState(null);
   const [muted, setMuted] = useState(false);
   const [menuAssetsReady, setMenuAssetsReady] = useState(true);
   const [hasSavedGame, setHasSavedGame] = useState(() => Boolean(loadCurrentGameSnapshot()));
@@ -1890,6 +1938,13 @@ export default function App() {
       setIsBattlefieldPeekActive(false);
     }
   }, [isPeekableDialogVisible, isBattlefieldPeekActive]);
+  useEffect(() => {
+    setSelectedStackEntryId(currentSelectedId => (
+      currentSelectedId && state.stack.some(entry => entry.card?.id === currentSelectedId)
+        ? currentSelectedId
+        : null
+    ));
+  }, [state.stack]);
   useEffect(() => {
     const hasPersistableGame = state.started && !state.winner;
 
@@ -2083,8 +2138,22 @@ export default function App() {
 
   const handleCardClick = (card, zone) => {
     if (isAiMirror) return;
+
+    if (zone === 'stack') {
+      const clickedEntry = state.stack.find(entry => entry.card?.id === card.id) || null;
+      if (state.priority === 'player' && state.pendingTargetSelection && isValidTarget(card, zone, state)) {
+        setSelectedStackEntryId(null);
+        dispatch({ type: 'CAST_WITH_TARGET', targetId: card.id, targetZone: zone });
+        return;
+      }
+      setSelectedStackEntryId(clickedEntry?.card?.id || null);
+      if (state.priority !== 'player') return;
+      return;
+    }
+
+    setSelectedStackEntryId(null);
     if (state.priority !== 'player') return;
-    
+
     if (state.pendingTargetSelection && isValidTarget(card, zone, state)) {
        dispatch({ type: 'CAST_WITH_TARGET', targetId: card.id, targetZone: zone }); return;
     }
@@ -2855,20 +2924,20 @@ export default function App() {
          <PeekableDialogOverlay
            peekActive={isBattlefieldPeekActive}
            onPeekStart={handleBattlefieldPeekStart}
-           onPeekEnd={handleBattlefieldPeekEnd}
+            onPeekEnd={handleBattlefieldPeekEnd}
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
          >
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-sm flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">{state.pendingAction.spellName}</h3>
-               <p className="text-slate-300 text-sm mb-2">Choose whether <strong>{state.pendingAction.targetName}</strong> becomes an <strong>Island</strong> or a <strong>Swamp</strong>.</p>
-               <p className="text-slate-500 text-[11px] mb-6">Choosing Island makes it count as an Island for the game.</p>
-               <div className="grid grid-cols-1 gap-3 w-full">
+               <p className="text-slate-300 text-sm mb-2">Choose which <strong>basic land type</strong> <strong>{state.pendingAction.targetName}</strong> becomes.</p>
+               <p className="text-slate-500 text-[11px] mb-6">For Dandan, choose a land type its controller does not control if you want it to lose support.</p>
+               <div className="grid grid-cols-2 gap-3 w-full">
                   {LAND_TYPE_CHOICES.map((landType) => (
-                    <button key={landType} onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', landTypeChoice: landType })} className={`w-full py-3 text-white font-bold rounded-xl transition-colors ${landType === 'Island' ? 'bg-sky-600 hover:bg-sky-500' : 'bg-purple-700 hover:bg-purple-600'}`}>
+                    <button key={landType} onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', landTypeChoice: landType })} className={`w-full py-3 font-bold rounded-xl transition-colors ${LAND_TYPE_BUTTON_STYLES[landType] || 'bg-slate-700 hover:bg-slate-600 text-white'}`}>
                       {landType}
                     </button>
                   ))}
-                  <button onClick={() => dispatch({ type: 'CANCEL_PENDING_ACTION' })} className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors">Cancel</button>
+                  <button onClick={() => dispatch({ type: 'CANCEL_PENDING_ACTION' })} className="col-span-2 w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors">Cancel</button>
                </div>
             </div>
          </PeekableDialogOverlay>
@@ -3099,7 +3168,7 @@ export default function App() {
                 <div className="flex justify-center min-w-full">
                   <div className="flex items-start gap-2 sm:gap-3 w-max">
                   {groupLands(state.ai.board).map((group, i) => (
-                     <StackedLandGroup key={i} lands={group} official={useOfficialCards} state={state} zone="board" onZoom={setZoomedCard} onClick={(card) => handleCardClick(card, 'board')} />
+                     <StackedLandGroup key={i} lands={group} official={useOfficialCards} state={state} zone="board" onZoom={setZoomedCard} onClick={(card) => handleCardClick(card, 'board')} selectedStackEntryId={selectedStackEntryId} />
                   ))}
                   </div>
                 </div>
@@ -3113,6 +3182,7 @@ export default function App() {
                 onZoom={setZoomedCard}
                 onClick={(card) => handleCardClick(card, 'board')}
                 className="custom-scrollbar"
+                selectedStackEntryId={selectedStackEntryId}
               />
            </div>
         </div>
@@ -3131,10 +3201,10 @@ export default function App() {
           <div className="absolute inset-0 flex items-center justify-center px-2 z-40 pointer-events-none">
              {state.stack.map((s, i) => (
                 <div key={s.card.id} className="relative group shrink-0 animate-in zoom-in-50 duration-200 pointer-events-auto" style={{ zIndex: i, marginLeft: i === 0 ? 0 : -18 }}>
-                  <Card card={s.card} zone="stack" official={useOfficialCards} onZoom={setZoomedCard} targetable={isValidTarget(s.card, 'stack', state)} onClick={() => handleCardClick(s.card, 'stack')} />
+                  <Card card={s.card} zone="stack" official={useOfficialCards} onZoom={setZoomedCard} targetable={isValidTarget(s.card, 'stack', state)} stackTargeted={isStackTargetHighlighted(s.card, 'stack', state, selectedStackEntryId)} onClick={() => handleCardClick(s.card, 'stack')} />
                 </div>
-             ))}
-          </div>
+              ))}
+            </div>
         </div>
 
         {/* PLAYER ZONE */}
@@ -3169,6 +3239,7 @@ export default function App() {
                 onZoom={setZoomedCard}
                 onClick={(card) => handleCardClick(card, 'board')}
                 getSubtleHighlight={canPlayerDeclareAttack}
+                selectedStackEntryId={selectedStackEntryId}
               />
            </div>
            <div className="h-[25%] min-h-[108px] sm:min-h-[132px] flex items-center px-3 sm:px-4 mt-1 overflow-visible">
@@ -3176,7 +3247,7 @@ export default function App() {
                 <div className="flex justify-center min-w-full">
                   <div className="flex items-start gap-2 sm:gap-3 w-max">
                   {groupLands(state.player.board).map((group, i) => (
-                     <StackedLandGroup key={i} lands={group} official={useOfficialCards} state={state} zone="board" onZoom={setZoomedCard} onClick={(card) => handleCardClick(card, 'board')} activatablePlayer="player" />
+                     <StackedLandGroup key={i} lands={group} official={useOfficialCards} state={state} zone="board" onZoom={setZoomedCard} onClick={(card) => handleCardClick(card, 'board')} activatablePlayer="player" selectedStackEntryId={selectedStackEntryId} />
                   ))}
                   </div>
                 </div>

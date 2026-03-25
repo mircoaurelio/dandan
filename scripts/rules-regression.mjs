@@ -584,7 +584,7 @@ test('medium AI targets the Dandan with Crystal Spray when changing one land wou
   expect(action.type === 'CAST_SPELL', `Medium AI should cast Crystal Spray here, got ${action.type}`);
   expect(action.cardId === crystalSpray.id, 'Medium AI did not choose Crystal Spray for the kill line');
   expect(action.target?.id === playerDandan.id, 'Medium AI should target the Dandan itself when one land change would leave it alive');
-  expect(action.landTypeChoice === 'Swamp', `Medium AI should choose Swamp for the kill line, got ${action.landTypeChoice}`);
+  expect(['Plains', 'Swamp', 'Mountain', 'Forest'].includes(action.landTypeChoice), `Medium AI should choose a non-Island land type for the kill line, got ${action.landTypeChoice}`);
 });
 
 test('medium AI targets the Dandan with Magical Hack when changing one land would kill only one Dandan', () => {
@@ -619,7 +619,7 @@ test('medium AI targets the Dandan with Magical Hack when changing one land woul
   expect(action.type === 'CAST_SPELL', `Medium AI should cast Magical Hack here, got ${action.type}`);
   expect(action.cardId === magicalHack.id, 'Medium AI did not choose Magical Hack for the kill line');
   expect(action.target?.id === playerDandan.id, 'Medium AI should target the Dandan itself when a land line only kills one Dandan');
-  expect(action.landTypeChoice === 'Swamp', `Medium AI should choose Swamp for the direct Dandan kill line, got ${action.landTypeChoice}`);
+  expect(['Plains', 'Swamp', 'Mountain', 'Forest'].includes(action.landTypeChoice), `Medium AI should choose a non-Island land type for the direct Dandan kill line, got ${action.landTypeChoice}`);
 });
 
 test('player choosing Island makes a hacked land count as an Island', () => {
@@ -693,6 +693,50 @@ test('Magical Hack remains permanent after cleanup and the next turn', () => {
   expect(hackedLand?.landType === 'Island', 'Magical Hack should not wear off during cleanup');
   expect(hackedLand?.blueSources === 1, 'Magical Hack should keep Island blue mana after cleanup');
   expect(hackedLand?.temporaryTextChangeBaseState == null, 'Magical Hack should not leave a temporary text-change marker');
+});
+
+test('Magical Hack can choose a third land type to kill Dandan through Island plus Swamp support', () => {
+  const magicalHack = makeCard(CARDS.MAGICAL_HACK, { id: 'hack-third-type-card', owner: 'ai' });
+  const aiIsland = makeCard(CARDS.ISLAND_1, { id: 'hack-third-type-ai-island' });
+  const playerIsland = makeCard(CARDS.ISLAND_2, { id: 'hack-third-type-player-island' });
+  const playerSwamp = makeCard(CARDS.FENGRAF, {
+    id: 'hack-third-type-player-swamp',
+    landType: 'Swamp',
+    isSwamp: true,
+    blueSources: 0
+  });
+  const playerDandan = makeCard(CARDS.DANDAN, {
+    id: 'hack-third-type-player-dandan',
+    owner: 'player',
+    summoningSickness: false
+  });
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main1',
+    priority: 'ai',
+    ai: {
+      life: 20,
+      hand: [magicalHack],
+      board: [aiIsland],
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [playerIsland, playerSwamp, playerDandan],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: magicalHack.id, target: playerDandan, landTypeChoice: 'Plains' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  expect(state.stackResolving === true, 'Magical Hack with Plains choice did not reach stack resolution');
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(!state.player.board.some((card) => card.id === playerDandan.id), 'Dandan should die when changed to an unsupported third land type');
+  expect(state.graveyard.some((card) => card.id === playerDandan.id), 'Dandan did not reach the graveyard after losing all support');
 });
 
 test('medium AI bounces Control Magic to reclaim its stolen Dandan', () => {

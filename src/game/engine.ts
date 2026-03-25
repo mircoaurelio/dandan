@@ -445,7 +445,7 @@ const getBlueSources = (card) => {
 const getBlueRequirement = (manaCost) => (manaCost.match(/\{U\}/g) || []).length;
 const isCreatureTemplate = (card) => Boolean(card) && (card.type?.includes('Creature') || card.name === DANDAN_NAME);
 const PRINTED_DANDAN_LAND_TYPE = 'Island';
-export const LAND_TYPE_CHOICES = ['Island', 'Swamp'];
+export const LAND_TYPE_CHOICES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 const isLandTypeChoice = (landType) => LAND_TYPE_CHOICES.includes(landType);
 const isLandTypeChoiceSpell = (spellName) => ['Magical Hack', 'Crystal Spray'].includes(spellName);
 const getPrintedLandType = (card) => card.type?.includes('Island') ? 'Island' : null;
@@ -1543,6 +1543,9 @@ const countAttackingDandansLosingSupport = (currentBoard, nextBoard) => currentB
   isDandanSupported(card, currentBoard) &&
   !isDandanSupportedOnBoard(card, nextBoard)
 )).length;
+const getMissingLandType = (board, preferredOrder = LAND_TYPE_CHOICES) => (
+  preferredOrder.find(landType => !boardHasLandType(board, landType)) || preferredOrder[0] || PRINTED_DANDAN_LAND_TYPE
+);
 const spellWouldSelfDestruct = (state, spell) => spell?.card?.name === DANDAN_NAME && !boardHasLandType(state[spell.controller].board, getDandanLandType(spell.card));
 const getBattlefieldCard = (state, cardId) => state.player.board.find(card => card.id === cardId) || state.ai.board.find(card => card.id === cardId) || null;
 const getBattlefieldController = (state, cardId) => {
@@ -1790,7 +1793,7 @@ const getTransformTargetChoiceCandidates = (state, actor, target) => {
     if (target.isLand && targetController === actor && landTypeChoice === 'Island' && getLandType(target) !== 'Island') {
       score += 0.4;
     }
-    if (target.isLand && targetController === opponent && landTypeChoice === 'Swamp' && getLandType(target) === 'Island') {
+    if (target.isLand && targetController === opponent && landTypeChoice !== 'Island' && getLandType(target) === 'Island') {
       score += 0.4;
     }
 
@@ -1811,13 +1814,20 @@ const getTransformTargetCandidates = (state, actor) => {
 };
 const pickTransformTarget = (state, actor) => getTransformTargetCandidates(state, actor)[0] || null;
 const chooseLandTypeForTransformTarget = (state, actor, target) => {
-  if (!target?.id) return 'Swamp';
+  if (!target?.id) return getMissingLandType([], ['Plains', 'Mountain', 'Forest', 'Swamp', 'Island']);
 
   const bestCandidate = getTransformTargetChoiceCandidates(state, actor, target)[0];
   if (bestCandidate) return bestCandidate.landTypeChoice;
-  if (target.name === DANDAN_NAME) return getDandanLandType(target);
-  if (target.isLand) return getLandType(target) || 'Swamp';
-  return 'Swamp';
+  const targetController = getBattlefieldController(state, target.id);
+  const targetBoard = targetController ? state[targetController].board : [];
+  if (target.name === DANDAN_NAME) {
+    return getMissingLandType(targetBoard, ['Plains', 'Mountain', 'Forest', 'Swamp', 'Island']);
+  }
+  if (target.isLand) {
+    if (targetController === actor) return 'Island';
+    return getMissingLandType(targetBoard, ['Plains', 'Mountain', 'Forest', 'Swamp']);
+  }
+  return getMissingLandType(targetBoard, ['Plains', 'Mountain', 'Forest', 'Swamp', 'Island']);
 };
 
 const getBounceTargetCandidates = (state, actor) => {
