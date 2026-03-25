@@ -1533,6 +1533,18 @@ const countDandansLosingSupport = (currentBoard, nextBoard) => currentBoard.filt
   isDandanSupported(card, currentBoard) &&
   !isDandanSupportedOnBoard(card, nextBoard)
 )).length;
+const countSupportedDandans = (board) => countDandans(board, card => isDandanSupported(card, board));
+const countReadyAttackDandansAgainst = (attackerBoard, defenderBoard) => countDandans(attackerBoard, card => (
+  !card.summoningSickness &&
+  !card.tapped &&
+  canDandanAttackDefender(card, defenderBoard)
+));
+const countAttackingDandansLosingSupport = (currentBoard, nextBoard) => currentBoard.filter(card => (
+  card.name === DANDAN_NAME &&
+  card.attacking &&
+  isDandanSupported(card, currentBoard) &&
+  !isDandanSupportedOnBoard(card, nextBoard)
+)).length;
 const spellWouldSelfDestruct = (state, spell) => spell?.card?.name === DANDAN_NAME && !boardHasLandType(state[spell.controller].board, getDandanLandType(spell.card));
 const getBattlefieldCard = (state, cardId) => state.player.board.find(card => card.id === cardId) || state.ai.board.find(card => card.id === cardId) || null;
 const getBattlefieldController = (state, cardId) => {
@@ -1728,36 +1740,78 @@ const getDesiredBlockCount = (state, actor, policy) => {
   return Math.max(currentBlocks, maxBlocks);
 };
 
+const getTransformTargetChoiceCandidates = (state, actor, target) => {
+  if (!target?.id) return [];
+
+  const targetController = getBattlefieldController(state, target.id);
+  if (!targetController) return [];
+
+  const opponent = getOpponent(actor);
+  const actorBoard = state[actor].board;
+  const opponentBoard = state[opponent].board;
+  const actorReadyAttackWeight = state.turn === actor && (state.phase === 'main1' || state.phase === 'declare_attackers') ? 4.5 : 0;
+  const opponentReadyAttackWeight = state.turn === opponent && (state.phase === 'main1' || state.phase === 'declare_attackers') ? 5.5 : 0;
+
+  return LAND_TYPE_CHOICES.map(landTypeChoice => {
+    const nextActorBoard = targetController === actor
+      ? getBoardAfterTransformingPermanent(actorBoard, target.id, landTypeChoice)
+      : actorBoard;
+    const nextOpponentBoard = targetController === opponent
+      ? getBoardAfterTransformingPermanent(opponentBoard, target.id, landTypeChoice)
+      : opponentBoard;
+
+    const actorSupportedDelta = countSupportedDandans(nextActorBoard) - countSupportedDandans(actorBoard);
+    const opponentSupportedDelta = countSupportedDandans(nextOpponentBoard) - countSupportedDandans(opponentBoard);
+    const actorBlueDelta = getBlueSourcesInPlay(nextActorBoard) - getBlueSourcesInPlay(actorBoard);
+    const opponentBlueDelta = getBlueSourcesInPlay(nextOpponentBoard) - getBlueSourcesInPlay(opponentBoard);
+    const actorReadyAttackDelta = actorReadyAttackWeight > 0
+      ? countReadyAttackDandansAgainst(nextActorBoard, nextOpponentBoard) - countReadyAttackDandansAgainst(actorBoard, opponentBoard)
+      : 0;
+    const opponentReadyAttackDelta = opponentReadyAttackWeight > 0
+      ? countReadyAttackDandansAgainst(nextOpponentBoard, nextActorBoard) - countReadyAttackDandansAgainst(opponentBoard, actorBoard)
+      : 0;
+    const actorAttackingLoss = countAttackingDandansLosingSupport(actorBoard, nextActorBoard);
+    const opponentAttackingLoss = countAttackingDandansLosingSupport(opponentBoard, nextOpponentBoard);
+
+    let score =
+      actorSupportedDelta * 11
+      - opponentSupportedDelta * 13
+      + actorBlueDelta * 2.5
+      - opponentBlueDelta * 3.5
+      + actorReadyAttackDelta * actorReadyAttackWeight
+      - opponentReadyAttackDelta * opponentReadyAttackWeight
+      - actorAttackingLoss * 4
+      + opponentAttackingLoss * 4.5;
+
+    if (target.name === DANDAN_NAME) {
+      score += targetController === opponent ? 1.5 : 0.75;
+    }
+    if (target.isLand && targetController === actor && landTypeChoice === 'Island' && getLandType(target) !== 'Island') {
+      score += 0.4;
+    }
+    if (target.isLand && targetController === opponent && landTypeChoice === 'Swamp' && getLandType(target) === 'Island') {
+      score += 0.4;
+    }
+
+    return { target, targetController, landTypeChoice, score };
+  }).sort((left, right) => right.score - left.score);
+};
+
 const getTransformTargetCandidates = (state, actor) => {
   const opponent = actor === 'player' ? 'ai' : 'player';
-  const board = state[opponent].board;
-  const candidates = board
-    .filter(card => card.name === DANDAN_NAME || card.isLand)
-    .flatMap(card => LAND_TYPE_CHOICES.map(landTypeChoice => {
-      const nextBoard = getBoardAfterTransformingPermanent(board, card.id, landTypeChoice);
-      const killedDandans = countDandansLosingSupport(board, nextBoard);
-      const attackingKills = board.filter(permanent => (
-        permanent.name === DANDAN_NAME &&
-        permanent.attacking &&
-        isDandanSupported(permanent, board) &&
-        !isDandanSupportedOnBoard(permanent, nextBoard)
-      )).length;
-      const blueLoss = Math.max(0, getBlueSourcesInPlay(board) - getBlueSourcesInPlay(nextBoard));
-      const score = killedDandans * 12 + attackingKills * 4 + blueLoss * 3 + (card.name === DANDAN_NAME ? 1.5 : 0);
-      return { target: card, landTypeChoice, score };
-    }));
-
-  return candidates.filter(candidate => candidate.score > 0).sort((left, right) => right.score - left.score);
+  const targets = [...state[opponent].board, ...state[actor].board]
+    .filter(card => card.name === DANDAN_NAME || card.isLand);
+  const candidates = targets.flatMap(target => getTransformTargetChoiceCandidates(state, actor, target));
+  return candidates.filter(candidate => candidate.score > 2).sort((left, right) => right.score - left.score);
 };
 const pickTransformTarget = (state, actor) => getTransformTargetCandidates(state, actor)[0] || null;
 const chooseLandTypeForTransformTarget = (state, actor, target) => {
   if (!target?.id) return 'Swamp';
 
-  const targetController = getBattlefieldController(state, target.id);
-  if (targetController === getOpponent(actor)) {
-    return getTransformTargetCandidates(state, actor).find(candidate => candidate.target.id === target.id)?.landTypeChoice || 'Swamp';
-  }
-  if (targetController === actor) return 'Island';
+  const bestCandidate = getTransformTargetChoiceCandidates(state, actor, target)[0];
+  if (bestCandidate) return bestCandidate.landTypeChoice;
+  if (target.name === DANDAN_NAME) return getDandanLandType(target);
+  if (target.isLand) return getLandType(target) || 'Swamp';
   return 'Swamp';
 };
 

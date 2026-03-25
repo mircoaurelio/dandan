@@ -360,18 +360,20 @@ const getHandFanStyle = (index, total, side = 'bottom') => {
 
 const getLandStackRevealRatio = (total) => {
   if (total <= 1) return 1;
-  if (total <= 4) return 0.5;
-  if (total === 5) return 0.4;
-  if (total === 6) return 0.3;
-  if (total === 7) return 0.2;
-  return 0.1;
+  if (total === 2) return 0.72;
+  if (total === 3) return 0.62;
+  if (total === 4) return 0.54;
+  if (total === 5) return 0.46;
+  if (total === 6) return 0.4;
+  if (total === 7) return 0.34;
+  return 0.28;
 };
 
 const getLandStackStep = (total) => {
   const revealRatio = getLandStackRevealRatio(total);
   return {
-    mobile: Math.max(6, Math.round(64 * revealRatio)),
-    desktop: Math.max(8, Math.round(80 * revealRatio))
+    mobile: Math.max(12, Math.round(64 * revealRatio)),
+    desktop: Math.max(16, Math.round(80 * revealRatio))
   };
 };
 
@@ -678,6 +680,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
   const [isPressing, setIsPressing] = useState(false);
   const printedLandType = card.type?.includes('Island') ? 'Island' : null;
   const changedLandType = zone === 'board' && card.isLand && card.landType && card.landType !== printedLandType ? card.landType : null;
+  const holdDelayMs = 280;
 
   const startHold = (e) => {
      if (e.type === 'mousedown' && e.button === 2) {
@@ -688,7 +691,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
      if (zone === 'board' && card.isLand) setIsPressing(true);
      holdTimer.current = setTimeout(() => {
         onZoom && onZoom(card);
-     }, 600); 
+     }, holdDelayMs); 
   };
 
   const cancelHold = () => {
@@ -719,8 +722,8 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
       ringClass = 'ring-2 ring-blue-400 ring-offset-1 ring-offset-slate-950 shadow-[0_0_15px_rgba(96,165,250,0.6)]';
       interactionClass = disableHoverLift ? 'cursor-pointer' : 'cursor-pointer hover:-translate-y-4';
   } else if (activatable && zone === 'board') {
-      ringClass = 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-slate-950 shadow-[0_0_15px_rgba(34,211,238,0.6)] animate-pulse cursor-pointer';
-      interactionClass = 'cursor-pointer hover:scale-[1.02]';
+      ringClass = 'ring-2 ring-cyan-300/70 ring-offset-1 ring-offset-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.22)] cursor-pointer';
+      interactionClass = 'cursor-pointer hover:scale-[1.01]';
   } else if (card.attacking) {
       ringClass = 'ring-2 ring-orange-500 ring-offset-1 shadow-[0_0_15px_rgba(249,115,22,0.8)]';
   } else if (card.blocking) {
@@ -732,7 +735,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
       if (zone === 'board' && card.name === 'DandÃ¢n' && !card.tapped && !card.summoningSickness) interactionClass = 'cursor-pointer hover:ring-2 hover:ring-slate-400';
   }
   if (zone === 'board' && card.isLand) {
-    interactionClass = `${interactionClass} cursor-pointer hover:ring-1 hover:ring-cyan-200/70 hover:ring-offset-1 hover:ring-offset-slate-950 hover:shadow-[0_0_10px_rgba(125,211,252,0.2)]`.trim();
+    interactionClass = `${interactionClass} cursor-pointer hover:ring-1 hover:ring-cyan-200/45 hover:ring-offset-1 hover:ring-offset-slate-950 hover:shadow-[0_0_6px_rgba(125,211,252,0.12)]`.trim();
   }
 
   const CardBack = () => (
@@ -763,7 +766,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
       style={{ transform: getBaseTransform(), transformStyle: 'preserve-3d', ...style }}
     >
       {zone === 'board' && card.isLand && isPressing && (
-        <div className="absolute inset-[-2px] rounded-[8px] border border-cyan-100/70 bg-cyan-200/8 shadow-[0_0_12px_rgba(34,211,238,0.22)] pointer-events-none z-50" />
+        <div className="absolute inset-[-2px] rounded-[8px] border border-cyan-100/45 bg-cyan-200/5 shadow-[0_0_8px_rgba(34,211,238,0.14)] pointer-events-none z-50" />
       )}
       <div className="absolute inset-0 bg-slate-900" />
       {hidden ? <CardBack /> : official ? (
@@ -791,7 +794,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
         </div>
       )}
       {card.tapped && zone === 'board' && (
-        <div className={`absolute inset-0 rounded-md z-30 pointer-events-none flex items-center justify-center ${card.isLand ? 'bg-sky-950/30 border border-sky-300/30 shadow-[inset_0_0_18px_rgba(125,211,252,0.2)]' : 'bg-black/50'}`}>
+        <div className={`absolute inset-0 rounded-md z-30 pointer-events-none flex items-center justify-center ${card.isLand ? 'bg-sky-950/20 border border-sky-300/15 shadow-[inset_0_0_10px_rgba(125,211,252,0.12)]' : 'bg-black/50'}`}>
           <div className={`w-4 h-4 rounded-full border-2 rotate-90 ${card.isLand ? 'border-sky-100 opacity-80' : 'border-slate-300 opacity-50'}`} style={{ borderTopColor: 'transparent', borderRightColor: 'transparent' }}/>
         </div>
       )}
@@ -830,7 +833,7 @@ const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activ
 
   return (
     <div
-      className={`land-stack-group ${isGroupActivatable ? 'drop-shadow-[0_0_20px_rgba(34,211,238,0.35)]' : ''}`}
+      className={`land-stack-group ${isGroupActivatable ? 'drop-shadow-[0_0_12px_rgba(34,211,238,0.18)]' : ''}`}
       style={{
         '--land-count': `${total}`,
         '--land-step-mobile': `${mobile}px`,
@@ -855,13 +858,13 @@ const StackedLandGroup = ({ lands, official, state, zone, onZoom, onClick, activ
         </div>
       ))}
       {isGroupActivatable && zone === 'board' && (
-        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-cyan-400 text-slate-950 border border-cyan-200 font-black px-2 py-0.5 rounded-full shadow-[0_0_15px_rgba(34,211,238,0.6)] text-[9px] tracking-widest z-20">
+        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-cyan-300/90 text-slate-950 border border-cyan-100 font-black px-2 py-0.5 rounded-full shadow-[0_0_8px_rgba(34,211,238,0.24)] text-[9px] tracking-widest z-20">
           ACTIVATE
         </div>
       )}
       {tapped > 0 && total >= 5 && (
         <div className="absolute -bottom-1 right-0 bg-slate-950/95 text-slate-300 border border-slate-700 font-bold px-1.5 py-0.5 rounded shadow text-[9px] z-20">
-          {tapped} tap
+          {tapped}/{total} Tap
         </div>
       )}
     </div>
@@ -1796,6 +1799,8 @@ export default function App() {
   const [showQuickGameDialog, setShowQuickGameDialog] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [dandanCastConfirm, setDandanCastConfirm] = useState(null);
+  const [dandanAttackBlockedDialog, setDandanAttackBlockedDialog] = useState(null);
   const [muted, setMuted] = useState(false);
   const [menuAssetsReady, setMenuAssetsReady] = useState(true);
   const [hasSavedGame, setHasSavedGame] = useState(() => Boolean(loadCurrentGameSnapshot()));
@@ -1809,6 +1814,11 @@ export default function App() {
   const adventurePreviewIndex = Math.min(adventureWinsCount, ADVENTURE_ROUTE.length - 1);
   const adventurePreviewCharacter = getAiCharacter(ADVENTURE_ROUTE[adventurePreviewIndex]) || AI_CHARACTERS[0];
   const selectedOpponent = getAiCharacter(selectedOpponentCharacter) || AI_CHARACTERS[0];
+  const canPlayerAttemptAttackSelection = !isAiMirror &&
+    state.turn === 'player' &&
+    state.phase === 'declare_attackers' &&
+    state.priority === 'player' &&
+    state.player.board.some(card => card.name === DANDAN_NAME && !card.summoningSickness && !card.tapped);
   const currentOpponentCharacter = state.started
     ? getAiCharacter(state.aiCharacterId)
     : menuScreen === 'adventure'
@@ -1860,13 +1870,13 @@ export default function App() {
 
   useEffect(() => {
     if (isAiMirror) return;
-    if (state.winner || state.stackResolving || state.pendingTargetSelection || state.pendingAction || state.priority !== 'player') return;
-    if (!checkHasActions(state, 'player')) {
+    if (state.winner || state.stackResolving || state.pendingTargetSelection || state.pendingAction || state.priority !== 'player' || dandanCastConfirm || dandanAttackBlockedDialog) return;
+    if (!checkHasActions(state, 'player') && !canPlayerAttemptAttackSelection) {
       const delay = state.stack.length > 0 ? 800 : 150; 
       const timer = setTimeout(() => { dispatch({ type: 'PASS_PRIORITY', player: 'player' }); }, delay); 
       return () => clearTimeout(timer);
     }
-  }, [state.priority, state.actionCount, state.stackResolving, state.winner, state.pendingTargetSelection, state.pendingAction, state.turn, state.phase, state.stack.length, isAiMirror]);
+  }, [state.priority, state.actionCount, state.stackResolving, state.winner, state.pendingTargetSelection, state.pendingAction, state.turn, state.phase, state.stack.length, isAiMirror, dandanCastConfirm, dandanAttackBlockedDialog, canPlayerAttemptAttackSelection]);
 
   useEffect(() => {
     if (state.winner || state.stackResolving) return;
@@ -1887,6 +1897,8 @@ export default function App() {
   }, [state.priority, state.actionCount, state.stackResolving, state.winner, state.turn, state.phase, state.pendingAction, isAiMirror, difficultySpeed.think, difficultySpeed.pass]);
 
   const startMatch = (mode, aiCharacterId, playerAiCharacterId = null, difficultyOverride = selectedDifficulty) => {
+    setDandanCastConfirm(null);
+    setDandanAttackBlockedDialog(null);
     dispatch({
       type: 'START_GAME',
       mode,
@@ -1928,6 +1940,8 @@ export default function App() {
     setShowQuickGameDialog(false);
     setShowMenuSettings(false);
     setShowExitConfirm(false);
+    setDandanCastConfirm(null);
+    setDandanAttackBlockedDialog(null);
     setShowLog(false);
     setZoomedCard(null);
     setViewingZone(null);
@@ -1942,6 +1956,8 @@ export default function App() {
     setShowQuickGameDialog(false);
     setShowMenuSettings(false);
     setShowExitConfirm(false);
+    setDandanCastConfirm(null);
+    setDandanAttackBlockedDialog(null);
     setShowLog(false);
     setZoomedCard(null);
     setViewingZone(null);
@@ -1968,6 +1984,8 @@ export default function App() {
     setShowMenuSettings(false);
     setShowRivalMenu(false);
     setShowExitConfirm(false);
+    setDandanCastConfirm(null);
+    setDandanAttackBlockedDialog(null);
     setShowLog(false);
     setZoomedCard(null);
     setViewingZone(null);
@@ -2009,11 +2027,21 @@ export default function App() {
         return;
       }
       if (canPlay) {
-        card.isLand ? dispatch({ type: 'PLAY_LAND', player: 'player', cardId: card.id }) : dispatch({ type: 'CAST_SPELL', player: 'player', cardId: card.id });
+        if (card.isLand) {
+          dispatch({ type: 'PLAY_LAND', player: 'player', cardId: card.id });
+        } else if (card.name === DANDAN_NAME && !controlsIsland(state.player.board)) {
+          setDandanCastConfirm({ cardId: card.id, cardName: card.name });
+        } else {
+          dispatch({ type: 'CAST_SPELL', player: 'player', cardId: card.id });
+        }
       }
     } else if (zone === 'board') {
       if (card.name === 'DandÃ¢n') {
          if (state.phase === 'declare_attackers' && state.turn === 'player' && !card.summoningSickness && !card.tapped) {
+            if (!canDandanAttackDefender(card, state.ai.board)) {
+              setDandanAttackBlockedDialog({ requiredLandType: card.dandanLandType || 'Island' });
+              return;
+            }
             dispatch({ type: 'TOGGLE_ATTACK', cardId: card.id, player: 'player' });
          } else if (state.phase === 'declare_blockers' && state.turn === 'ai' && !card.tapped) {
             dispatch({ type: 'TOGGLE_BLOCK', cardId: card.id, player: 'player' });
@@ -2070,8 +2098,7 @@ export default function App() {
     state.priority === 'player' &&
     card.name === DANDAN_NAME &&
     !card.summoningSickness &&
-    !card.tapped &&
-    canDandanAttackDefender(card, state.ai.board);
+    !card.tapped;
 
   const adventurePathPoints = ADVENTURE_MAP_LAYOUT.map(({ left, top }) => `${left},${top}`).join(' ');
 
@@ -2463,12 +2490,14 @@ export default function App() {
     );
   }
 
-  const isAutoPassing = state.priority === 'player' && !state.stackResolving && !state.pendingTargetSelection && !state.pendingAction && !checkHasActions(state, 'player');
+  const isAutoPassing = state.priority === 'player' && !state.stackResolving && !state.pendingTargetSelection && !state.pendingAction && !dandanCastConfirm && !dandanAttackBlockedDialog && !canPlayerAttemptAttackSelection && !checkHasActions(state, 'player');
   const hidePassButton = Boolean(
     zoomedCard ||
     viewingZone ||
     showLog ||
     showExitConfirm ||
+    dandanCastConfirm ||
+    dandanAttackBlockedDialog ||
     showMenuSettings ||
     showRivalMenu ||
     state.pendingTargetSelection ||
@@ -2490,11 +2519,10 @@ export default function App() {
      passIcon = <Layers size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'} />;
      btnColorClass = 'bg-gradient-to-b from-cyan-400 to-cyan-600 border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.6)] text-slate-900';
   } else if (state.phase === 'main1') {
-     const oppHasIsland = controlsIsland(state.ai.board);
      const canAttack = state.player.board.some(c => c.name === 'DandÃ¢n' && !c.summoningSickness && !c.tapped);
-     passLabel = (oppHasIsland && canAttack) ? 'TO COMBAT' : 'END TURN';
-     passIcon = (oppHasIsland && canAttack) ? <Swords size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/> : <Moon size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/>;
-     btnColorClass = (oppHasIsland && canAttack) ? 'bg-gradient-to-b from-orange-400 to-orange-600 border-orange-200 shadow-[0_0_20px_rgba(249,115,22,0.6)] text-slate-900' : 'bg-gradient-to-b from-indigo-400 to-indigo-600 border-indigo-200 shadow-[0_0_20px_rgba(129,140,248,0.6)] text-white';
+     passLabel = canAttack ? 'TO COMBAT' : 'END TURN';
+     passIcon = canAttack ? <Swords size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/> : <Moon size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/>;
+     btnColorClass = canAttack ? 'bg-gradient-to-b from-orange-400 to-orange-600 border-orange-200 shadow-[0_0_20px_rgba(249,115,22,0.6)] text-slate-900' : 'bg-gradient-to-b from-indigo-400 to-indigo-600 border-indigo-200 shadow-[0_0_20px_rgba(129,140,248,0.6)] text-white';
   } else if (state.phase === 'declare_attackers' && state.turn === 'player') {
      const isAttacking = state.player.board.some(c=>c.attacking);
      passLabel = isAttacking ? 'ATTACK' : 'NO ATKS';
@@ -2582,7 +2610,44 @@ export default function App() {
                  <button onClick={() => dispatch({ type: 'KEEP_HAND' })} className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black tracking-widest uppercase rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-all hover:scale-105">Keep Hand</button>
                 <button disabled={(state.mulliganCount || 0) >= 7} onClick={() => dispatch({ type: 'MULLIGAN' })} className="px-8 py-4 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-slate-200 font-black tracking-widest uppercase rounded-xl shadow-lg border border-slate-700 transition-all hover:scale-105 disabled:hover:scale-100">Mulligan</button>
               </div>
+         </div>
+      )}
+
+      {dandanCastConfirm && (
+        <div className="absolute inset-0 bg-black/80 z-[115] flex flex-col items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-sm flex flex-col items-center text-center">
+            <h3 className="font-arena-display text-xl font-bold text-blue-300 mb-2 tracking-[0.12em] uppercase">{dandanCastConfirm.cardName}</h3>
+            <p className="text-slate-300 text-sm mb-6">
+              You control no <strong>Islands</strong>. <strong>{dandanCastConfirm.cardName}</strong> will be sacrificed as soon as it resolves. Cast it anyway?
+            </p>
+            <div className="flex gap-4 w-full">
+              <button onClick={() => setDandanCastConfirm(null)} className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => {
+                const pendingCard = dandanCastConfirm;
+                setDandanCastConfirm(null);
+                if (pendingCard) dispatch({ type: 'CAST_SPELL', player: 'player', cardId: pendingCard.cardId });
+              }} className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-colors">
+                Cast Anyway
+              </button>
+            </div>
           </div>
+        </div>
+      )}
+
+      {dandanAttackBlockedDialog && (
+        <div className="absolute inset-0 bg-black/80 z-[115] flex flex-col items-center justify-center p-4 backdrop-blur-md">
+          <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-sm flex flex-col items-center text-center">
+            <h3 className="font-arena-display text-xl font-bold text-amber-300 mb-2 tracking-[0.12em] uppercase">Attack Not Possible</h3>
+            <p className="text-slate-300 text-sm mb-6">
+              The opponent controls no <strong>{dandanAttackBlockedDialog.requiredLandType}s</strong>, so <strong>{DANDAN_NAME}</strong> can't attack.
+            </p>
+            <button onClick={() => setDandanAttackBlockedDialog(null)} className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-xl transition-colors">
+              Okay
+            </button>
+          </div>
+        </div>
       )}
 
       {/* MULTI-CARD SELECT PENDING MODAL */}
@@ -2773,33 +2838,34 @@ export default function App() {
          <div className="absolute inset-0 bg-black/80 z-[100] flex flex-col items-center justify-center p-4 backdrop-blur-md">
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Halimar Depths</h3>
-               <p className="text-slate-300 text-sm mb-2">Reorder the top 3 cards of your library.</p>
-               <p className="text-slate-500 text-[10px] mb-6 uppercase tracking-widest">(Use arrows or drag. Left is top.)</p>
-               <div className="flex gap-4 justify-center mb-8 h-[130px]">
-                  {state.pendingAction.cards.map((c, i) => (
-                     <div 
-                        key={c.id} 
-                        className="relative flex flex-col items-center gap-2"
-                        draggable={true} 
-                        onDragStart={() => setDraggedIdx(i)} 
-                        onDragOver={(e) => { e.preventDefault(); }}
-                        onDrop={() => {
-                           if (draggedIdx !== null && draggedIdx !== i) dispatch({ type: 'REORDER_HALIMAR', from: draggedIdx, to: i });
-                           setDraggedIdx(null);
-                        }}
-                     >
-                        <div className="flex gap-2">
-                           <button disabled={i === 0} onClick={() => dispatch({ type: 'REORDER_HALIMAR', from: i, to: i - 1 })} className="px-2 py-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30">←</button>
-                           <button disabled={i === state.pendingAction.cards.length - 1} onClick={() => dispatch({ type: 'REORDER_HALIMAR', from: i, to: i + 1 })} className="px-2 py-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30">→</button>
+               <p className="text-slate-300 text-sm mb-5">Reorder the top 3 cards of your library.</p>
+               <div className="w-full overflow-x-auto overflow-y-visible custom-scrollbar pb-3">
+                  <div className="flex gap-4 justify-center items-start min-w-max mx-auto px-1">
+                     {state.pendingAction.cards.map((c, i) => (
+                        <div 
+                           key={c.id} 
+                           className="flex flex-col items-center gap-2 pb-1"
+                           draggable={true} 
+                           onDragStart={() => setDraggedIdx(i)} 
+                           onDragOver={(e) => { e.preventDefault(); }}
+                           onDrop={() => {
+                              if (draggedIdx !== null && draggedIdx !== i) dispatch({ type: 'REORDER_HALIMAR', from: draggedIdx, to: i });
+                              setDraggedIdx(null);
+                           }}
+                        >
+                           <div className="flex gap-2">
+                              <button disabled={i === 0} onClick={() => dispatch({ type: 'REORDER_HALIMAR', from: i, to: i - 1 })} className="px-2 py-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30">←</button>
+                              <button disabled={i === state.pendingAction.cards.length - 1} onClick={() => dispatch({ type: 'REORDER_HALIMAR', from: i, to: i + 1 })} className="px-2 py-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30">→</button>
+                           </div>
+                           <Card card={c} official={useOfficialCards} onZoom={null} disableHoverLift />
+                           <div className="h-4 w-full text-center text-[10px] font-bold text-slate-400">
+                              {i === 0 ? 'TOP' : i === state.pendingAction.cards.length - 1 ? 'BOTTOM' : ''}
+                           </div>
                         </div>
-                        <Card card={c} official={useOfficialCards} onZoom={null} disableHoverLift />
-                        <div className="absolute -bottom-6 w-full text-center text-[10px] font-bold text-slate-400">
-                           {i === 0 ? 'TOP' : i === state.pendingAction.cards.length - 1 ? 'BOTTOM' : ''}
-                        </div>
-                     </div>
-                  ))}
+                     ))}
+                  </div>
                </div>
-               <button onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION' })} className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl w-full transition-colors">Confirm Order</button>
+               <button onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION' })} className="mt-2 px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl w-full transition-colors">Confirm Order</button>
             </div>
          </div>
       )}
