@@ -115,6 +115,26 @@ const AudioEngine = {
     this.playTone(430, 'sine', 0.2, 0.028, 520);
     setTimeout(() => this.playBubble(660, 0.12, 0.022), 70);
   },
+  playLandingRipple() {
+    if (!this.ctx || this.muted) return;
+    const variants = [
+      () => {
+        this.playSplash(210, 78, 0.36, 0.06);
+        setTimeout(() => this.playBubble(430, 0.12, 0.022), 36);
+      },
+      () => {
+        this.playSplash(280, 102, 0.32, 0.055);
+        this.playTone(170, 'triangle', 0.18, 0.018, 118, true);
+        setTimeout(() => this.playBubble(560, 0.09, 0.018), 58);
+      },
+      () => {
+        this.playSplash(175, 68, 0.42, 0.065);
+        setTimeout(() => this.playBubble(520, 0.08, 0.017), 44);
+        setTimeout(() => this.playBubble(690, 0.07, 0.014), 94);
+      }
+    ];
+    variants[Math.floor(Math.random() * variants.length)]();
+  },
   playResolve() { 
     this.playSplash(780, 220, 0.28, 0.05);
     this.playTone(620, 'triangle', 0.22, 0.04, 980); 
@@ -835,24 +855,24 @@ const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onSettings }) => {
   }
 
   return (
-    <div className="w-full max-w-md mx-auto grid gap-3">
+    <div className="w-full max-w-md mx-auto grid justify-items-center gap-2.5">
       <HomeActionButton
         label="Adventure"
         onClick={onAdventure}
-        className="min-h-[78px] rounded-full bg-slate-700/58 p-0 shadow-[0_20px_44px_rgba(15,23,42,0.32)] hover:bg-slate-700/68"
-        labelClassName="text-[1.85rem] sm:text-[2rem] tracking-[0.02em] text-white"
+        className="w-full max-w-[15.75rem] min-h-[56px] rounded-full bg-slate-700/58 p-0 shadow-[0_18px_36px_rgba(15,23,42,0.28)] hover:bg-slate-700/68"
+        labelClassName="text-[1.2rem] sm:text-[1.32rem] tracking-[0.02em] text-white"
       />
       <HomeActionButton
         label="Quick Game"
         onClick={onQuickGame}
-        className="min-h-[78px] rounded-full bg-slate-700/58 p-0 shadow-[0_20px_44px_rgba(15,23,42,0.32)] hover:bg-slate-700/68"
-        labelClassName="text-[1.85rem] sm:text-[2rem] tracking-[0.02em] text-white"
+        className="w-full max-w-[15.75rem] min-h-[56px] rounded-full bg-slate-700/58 p-0 shadow-[0_18px_36px_rgba(15,23,42,0.28)] hover:bg-slate-700/68"
+        labelClassName="text-[1.2rem] sm:text-[1.32rem] tracking-[0.02em] text-white"
       />
       <HomeActionButton
         label="Settings"
         onClick={onSettings}
-        className="min-h-[78px] rounded-full bg-slate-700/58 p-0 shadow-[0_20px_44px_rgba(15,23,42,0.32)] hover:bg-slate-700/68"
-        labelClassName="text-[1.85rem] sm:text-[2rem] tracking-[0.02em] text-white"
+        className="w-full max-w-[15.75rem] min-h-[56px] rounded-full bg-slate-700/58 p-0 shadow-[0_18px_36px_rgba(15,23,42,0.28)] hover:bg-slate-700/68"
+        labelClassName="text-[1.2rem] sm:text-[1.32rem] tracking-[0.02em] text-white"
       />
     </div>
   );
@@ -1157,7 +1177,7 @@ const LandingScreen = ({
   const spawnLandingRipple = (event) => {
     if (typeof window === 'undefined') return;
     const targetBounds = event.currentTarget.getBoundingClientRect();
-    const size = Math.max(220, Math.min(Math.max(targetBounds.width, targetBounds.height) * 0.36, 360));
+    const size = Math.max(280, Math.min(Math.max(targetBounds.width, targetBounds.height) * 0.48, 500));
     const ripple = {
       id: Date.now() + Math.random(),
       x: event.clientX - targetBounds.left,
@@ -1165,6 +1185,8 @@ const LandingScreen = ({
       size
     };
 
+    AudioEngine.init();
+    AudioEngine.playLandingRipple();
     setLandingRipples((currentRipples) => [...currentRipples, ripple]);
     const cleanupTimer = window.setTimeout(() => {
       setLandingRipples((currentRipples) => currentRipples.filter((entry) => entry.id !== ripple.id));
@@ -1222,9 +1244,6 @@ const LandingScreen = ({
             }}
           >
             <span className="landing-water-ripple-lens" />
-            <span className="landing-water-ripple-ring landing-water-ripple-ring-1" />
-            <span className="landing-water-ripple-ring landing-water-ripple-ring-2" />
-            <span className="landing-water-ripple-ring landing-water-ripple-ring-3" />
           </div>
         ))}
       </div>
@@ -1234,7 +1253,7 @@ const LandingScreen = ({
           <div className="mx-auto flex min-h-[calc(100dvh-5.5rem)] w-full max-w-md flex-col sm:min-h-[calc(100dvh-6.5rem)]">
             <div className="flex flex-1 flex-col items-center justify-center">
               <div className="w-full">
-                <div className={`mb-8 text-center transition-all duration-700 ease-out ${
+                <div className={`mb-7 text-center transition-all duration-700 ease-out ${
                   titleVisible ? 'translate-y-0 opacity-100 scale-100' : 'translate-y-5 opacity-0 scale-[0.97]'
                 }`}>
                 <h1
@@ -1245,6 +1264,14 @@ const LandingScreen = ({
                 >
                   Forgetfull Fish
                 </h1>
+                <p
+                  className="mt-2 font-arena-display text-[0.86rem] sm:text-[0.95rem] tracking-[0.18em] text-white/90"
+                  style={{
+                    textShadow: '0 0 12px rgba(15,23,42,0.5), 0 0 24px rgba(15,23,42,0.28)'
+                  }}
+                >
+                  Dandan as much as you want
+                </p>
                 </div>
                 <div className={`transition-all duration-700 ease-out ${
                   actionsVisible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0 pointer-events-none'
@@ -1282,47 +1309,51 @@ const LandingScreen = ({
 
       {showMenuSettings && (
         <div className="absolute inset-0 z-20 flex items-start justify-center overflow-y-auto bg-[rgba(2,6,23,0.78)] p-4 backdrop-blur-sm sm:p-6">
-          <div className="my-auto w-full max-w-md rounded-[2rem] bg-white/[0.08] p-5 text-left shadow-[0_32px_90px_rgba(2,6,23,0.48)] backdrop-blur-xl sm:p-6">
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="font-arena-display text-3xl tracking-[0.08em] text-white">Settings</h2>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-slate-300/80">
-                  Sound And Visuals
-                </div>
+          <div className="my-auto flex w-full max-w-md flex-col items-center text-center">
+            <div className="mb-6">
+              <h2
+                className="font-arena-display text-3xl sm:text-[2.2rem] tracking-[0.08em] text-white"
+                style={{
+                  textShadow: '1px 0 0 rgba(15,23,42,0.9), -1px 0 0 rgba(15,23,42,0.9), 0 1px 0 rgba(15,23,42,0.9), 0 -1px 0 rgba(15,23,42,0.9), 0 0 18px rgba(30,41,59,0.42), 0 0 36px rgba(71,85,105,0.24)'
+                }}
+              >
+                Settings
+              </h2>
+              <div className="mt-2 text-[10px] uppercase tracking-[0.22em] text-slate-200/78">
+                Sound And Visuals
               </div>
-              <button onClick={onCloseSettings} className="rounded-xl bg-slate-950/88 px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-100 shadow-[0_14px_30px_rgba(2,6,23,0.34)] transition-colors hover:bg-slate-900">
-                Back
-              </button>
             </div>
-            <div className="space-y-3">
-              <button onClick={onToggleMuted} className={`w-full rounded-[1.7rem] px-4 py-4 text-left shadow-[0_18px_36px_rgba(15,23,42,0.26)] transition-all ${muted ? 'bg-slate-950/76 text-slate-100 hover:bg-slate-900/86' : 'bg-slate-100 text-slate-950 hover:bg-white'}`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="font-arena-display text-[1.45rem] tracking-[0.05em]">Sound</div>
-                    <div className={`mt-1 text-[10px] uppercase tracking-[0.18em] ${muted ? 'text-slate-300/80' : 'text-slate-700/70'}`}>
-                      {muted ? 'Muted' : 'Enabled'}
-                    </div>
-                  </div>
-                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${muted ? 'bg-slate-800 text-slate-200' : 'bg-slate-900 text-white'}`}>
-                    {muted ? <VolumeX size={18}/> : <Volume2 size={18}/>}
+            <div className="flex w-full flex-col items-center gap-2.5">
+              <button
+                onClick={onToggleMuted}
+                className="w-full max-w-[15.75rem] min-h-[64px] rounded-full bg-slate-700/58 px-5 py-3 text-white shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition-all hover:bg-slate-700/68"
+              >
+                <div className="flex flex-col items-center justify-center leading-none">
+                  <div className="font-arena-display text-[1.18rem] tracking-[0.04em]">{muted ? 'Sound Off' : 'Sound On'}</div>
+                  <div className="mt-2 text-[9px] uppercase tracking-[0.2em] text-slate-200/72">
+                    {muted ? 'Muted' : 'Enabled'}
                   </div>
                 </div>
               </button>
-              <button onClick={onToggleOfficialCards} className={`w-full rounded-[1.7rem] px-4 py-4 text-left shadow-[0_18px_36px_rgba(15,23,42,0.26)] transition-all ${useOfficialCards ? 'bg-slate-100 text-slate-950 hover:bg-white' : 'bg-slate-950/76 text-slate-100 hover:bg-slate-900/86'}`}>
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="font-arena-display text-[1.45rem] tracking-[0.05em]">Card Art</div>
-                    <div className={`mt-1 text-[10px] uppercase tracking-[0.18em] ${useOfficialCards ? 'text-slate-700/70' : 'text-slate-300/80'}`}>
-                      {useOfficialCards ? 'Sld Art' : 'Proxy'}
-                    </div>
-                  </div>
-                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${useOfficialCards ? 'bg-slate-900 text-white' : 'bg-slate-800 text-slate-200'}`}>
-                    <ImageIcon size={18}/>
+              <button
+                onClick={onToggleOfficialCards}
+                className="w-full max-w-[15.75rem] min-h-[64px] rounded-full bg-slate-700/58 px-5 py-3 text-white shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition-all hover:bg-slate-700/68"
+              >
+                <div className="flex flex-col items-center justify-center leading-none">
+                  <div className="font-arena-display text-[1.18rem] tracking-[0.04em]">Card Art</div>
+                  <div className="mt-2 text-[9px] uppercase tracking-[0.2em] text-slate-200/72">
+                    {useOfficialCards ? 'Sld Art' : 'Proxy'}
                   </div>
                 </div>
               </button>
+              <button
+                onClick={onCloseSettings}
+                className="w-full max-w-[15.75rem] min-h-[56px] rounded-full bg-slate-700/58 px-5 py-3 text-white shadow-[0_18px_36px_rgba(15,23,42,0.28)] transition-all hover:bg-slate-700/68"
+              >
+                <div className="font-arena-display text-[1.12rem] tracking-[0.04em]">Back</div>
+              </button>
             </div>
-            <div className="mt-5 text-center text-[10px] uppercase tracking-[0.24em] text-slate-300/65">
+            <div className="mt-5 text-center text-[10px] uppercase tracking-[0.24em] text-slate-200/65">
               {APP_VERSION}
             </div>
           </div>

@@ -138,12 +138,32 @@ textarea,
 
 @keyframes landing-water-ripple-lens {
   0% {
-    transform: translate(-50%, -50%) scale(0.18);
-    opacity: 0.22;
+    transform: translate(-50%, -50%) scale(0.14, 0.09) rotate(-10deg);
+    opacity: 1;
+  }
+
+  38% {
+    opacity: 0.88;
   }
 
   100% {
-    transform: translate(-50%, -50%) scale(1.22);
+    transform: translate(-50%, -50%) scale(1.52, 1.08) rotate(8deg);
+    opacity: 0;
+  }
+}
+
+@keyframes landing-water-ripple-shear {
+  0% {
+    transform: translate(-50%, -50%) scale(0.16, 0.11) rotate(12deg);
+    opacity: 0.96;
+  }
+
+  52% {
+    opacity: 0.72;
+  }
+
+  100% {
+    transform: translate(-50%, -50%) scale(1.22, 0.9) rotate(-12deg);
     opacity: 0;
   }
 }
@@ -267,7 +287,8 @@ textarea,
   overflow: visible;
 }
 
-.landing-water-ripple-ring,
+.landing-water-ripple::before,
+.landing-water-ripple::after,
 .landing-water-ripple-lens {
   position: absolute;
   left: 50%;
@@ -279,36 +300,43 @@ textarea,
   will-change: transform, opacity;
 }
 
+.landing-water-ripple::before,
+.landing-water-ripple::after {
+  content: "";
+}
+
+.landing-water-ripple::before {
+  width: 108%;
+  height: 72%;
+  background: rgba(255, 255, 255, 0.018);
+  backdrop-filter: blur(9px) saturate(2.1) brightness(1.2) contrast(1.2);
+  -webkit-backdrop-filter: blur(9px) saturate(2.1) brightness(1.2) contrast(1.2);
+  mask-image: radial-gradient(ellipse, rgba(0, 0, 0, 0.98) 0%, rgba(0, 0, 0, 0.95) 28%, rgba(0, 0, 0, 0.72) 48%, rgba(0, 0, 0, 0.22) 70%, transparent 84%);
+  -webkit-mask-image: radial-gradient(ellipse, rgba(0, 0, 0, 0.98) 0%, rgba(0, 0, 0, 0.95) 28%, rgba(0, 0, 0, 0.72) 48%, rgba(0, 0, 0, 0.22) 70%, transparent 84%);
+  animation: landing-water-ripple-lens 1.42s cubic-bezier(0.18, 0.72, 0.22, 1) forwards;
+}
+
+.landing-water-ripple::after {
+  width: 72%;
+  height: 46%;
+  background: rgba(255, 255, 255, 0.014);
+  backdrop-filter: blur(13px) saturate(2.35) brightness(1.28) contrast(1.26);
+  -webkit-backdrop-filter: blur(13px) saturate(2.35) brightness(1.28) contrast(1.26);
+  mask-image: radial-gradient(ellipse, rgba(0, 0, 0, 0.98) 0%, rgba(0, 0, 0, 0.92) 22%, rgba(0, 0, 0, 0.64) 42%, rgba(0, 0, 0, 0.16) 62%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse, rgba(0, 0, 0, 0.98) 0%, rgba(0, 0, 0, 0.92) 22%, rgba(0, 0, 0, 0.64) 42%, rgba(0, 0, 0, 0.16) 62%, transparent 78%);
+  animation: landing-water-ripple-shear 1.12s cubic-bezier(0.22, 0.62, 0.24, 1) forwards;
+}
+
 .landing-water-ripple-lens {
-  width: 62%;
-  height: 62%;
-  background:
-    radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0.1) 28%, rgba(255, 255, 255, 0.04) 54%, transparent 74%);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    inset 0 0 24px rgba(255, 255, 255, 0.12),
-    0 0 26px rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(4px) saturate(1.45) brightness(1.18) contrast(1.08);
-  -webkit-backdrop-filter: blur(4px) saturate(1.45) brightness(1.18) contrast(1.08);
-  animation: landing-water-ripple-lens 1.5s ease-out forwards;
-}
-
-.landing-water-ripple-ring {
-  width: 100%;
-  height: 100%;
-  border: 2px solid rgba(226, 232, 240, 0.38);
-  box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset,
-    0 0 28px rgba(255, 255, 255, 0.12);
-  animation: landing-water-ripple-ring 1.7s ease-out forwards;
-}
-
-.landing-water-ripple-ring-2 {
-  animation-delay: 120ms;
-}
-
-.landing-water-ripple-ring-3 {
-  animation-delay: 240ms;
+  width: 84%;
+  height: 84%;
+  background: rgba(255, 255, 255, 0.012);
+  box-shadow: none;
+  backdrop-filter: blur(8px) saturate(1.9) brightness(1.16) contrast(1.16);
+  -webkit-backdrop-filter: blur(8px) saturate(1.9) brightness(1.16) contrast(1.16);
+  mask-image: radial-gradient(circle, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.88) 24%, rgba(0, 0, 0, 0.5) 46%, rgba(0, 0, 0, 0.12) 68%, transparent 82%);
+  -webkit-mask-image: radial-gradient(circle, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.88) 24%, rgba(0, 0, 0, 0.5) 46%, rgba(0, 0, 0, 0.12) 68%, transparent 82%);
+  animation: landing-water-ripple-lens 1.58s cubic-bezier(0.16, 0.7, 0.22, 1) forwards;
 }
 
 @media (min-width: 640px) {
