@@ -2825,6 +2825,7 @@ export default function App() {
   const peerConnectionRef = useRef(null);
   const peerReconnectTimerRef = useRef(null);
   const peerDisconnectTimerRef = useRef(null);
+  const peerStartLaunchRef = useRef(false);
   const peerClockRef = useRef(null);
   const onlineLobbyPeerRef = useRef(null);
   const onlineLobbyConnectionRef = useRef(null);
@@ -3025,6 +3026,20 @@ export default function App() {
     pushPeerStateSync(state);
   }, [state, peerUi.role]);
   useEffect(() => {
+    const shouldStartPeerRoom = peerUi.role === 'host'
+      && peerUi.status === 'connected'
+      && peerUi.localReady
+      && peerUi.remoteReady
+      && (state.gameMode !== 'peer' || !state.started || Boolean(state.winner));
+    if (!shouldStartPeerRoom) {
+      peerStartLaunchRef.current = false;
+      return;
+    }
+    if (peerStartLaunchRef.current) return;
+    peerStartLaunchRef.current = true;
+    startPeerGameFromRoom();
+  }, [peerUi.role, peerUi.status, peerUi.localReady, peerUi.remoteReady, state.gameMode, state.started, state.winner]);
+  useEffect(() => {
     if (state.gameMode !== 'peer' || !state.started || state.winner) return;
     updatePeerUi((current) => (
       current.localReady || current.remoteReady
@@ -3141,8 +3156,9 @@ export default function App() {
     return 'Both players need to press Start Game.';
   };
 
-  const startPeerGameFromRoom = () => {
+  function startPeerGameFromRoom() {
     const currentState = latestStateRef.current;
+    const nextDifficulty = currentState?.difficulty || selectedDifficulty;
     updatePeerUi((current) => ({
       ...current,
       localReady: false,
@@ -3153,18 +3169,35 @@ export default function App() {
     rawDispatch({
       type: 'START_GAME',
       mode: 'peer',
-      difficulty: currentState?.difficulty || selectedDifficulty
+      difficulty: nextDifficulty
     });
-  };
+    if (peerUi.role === 'host') {
+      window.setTimeout(() => {
+        const connection = peerConnectionRef.current;
+        if (connection?.open) {
+          try {
+            connection.send({
+              type: 'peer-start-game',
+              protocol: PEER_PROTOCOL_VERSION,
+              difficulty: nextDifficulty
+            });
+          } catch (_error) {}
+        }
+        pushPeerStateSync(latestStateRef.current);
+      }, 60);
+      window.setTimeout(() => {
+        pushPeerStateSync(latestStateRef.current);
+      }, 220);
+    }
+  }
 
   const handlePeerStartGame = () => {
     AudioEngine.init();
     const connection = peerConnectionRef.current;
     if (!connection?.open || peerUi.status !== 'connected' || peerUi.localReady) return;
 
-    let shouldStart = false;
     updatePeerUi((current) => {
-      const next = {
+      return {
         ...current,
         localReady: true,
         error: '',
@@ -3173,8 +3206,6 @@ export default function App() {
           localReady: true
         })
       };
-      shouldStart = next.role === 'host' && next.remoteReady;
-      return next;
     });
 
     try {
@@ -3185,9 +3216,6 @@ export default function App() {
       });
     } catch (_error) {}
 
-    if (shouldStart) {
-      startPeerGameFromRoom();
-    }
   };
 
   const clearPeerTimers = () => {
@@ -3789,6 +3817,27 @@ export default function App() {
         });
         return;
       }
+      if (message.type === 'peer-start-game') {
+        updatePeerUi((current) => ({
+          ...current,
+          open: false,
+          role: 'guest',
+          status: 'connected',
+          localReady: false,
+          remoteReady: false,
+          error: '',
+          note: 'Both players are ready. Starting the game...'
+        }));
+        const currentState = latestStateRef.current;
+        if (currentState?.gameMode !== 'peer' || !currentState?.started || currentState?.winner) {
+          rawDispatch({
+            type: 'START_GAME',
+            mode: 'peer',
+            difficulty: message.difficulty || currentState?.difficulty || selectedDifficulty
+          });
+        }
+        return;
+      }
       if (message.type === 'session-ended') {
         disconnectPeerSession({
           notifyRemote: false,
@@ -4007,9 +4056,8 @@ export default function App() {
           return;
         }
         if (message.type === 'peer-ready') {
-          let shouldStart = false;
           updatePeerUi((current) => {
-            const next = {
+            return {
               ...current,
               remoteReady: Boolean(message.ready),
               note: buildPeerStartNote({
@@ -4017,12 +4065,7 @@ export default function App() {
                 remoteReady: Boolean(message.ready)
               })
             };
-            shouldStart = next.role === 'host' && next.localReady && next.remoteReady && next.status === 'connected';
-            return next;
           });
-          if (shouldStart) {
-            startPeerGameFromRoom();
-          }
           return;
         }
         if (message.type === 'peer-action' && message.action) {
