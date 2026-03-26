@@ -1317,6 +1317,11 @@ const getUpcomingNaturalDrawPlayers = (state, count = 2) => {
 
   return draws;
 };
+const getProjectedEmptyLibraryLoser = (state, extraCards = 0) => {
+  const deckSize = Math.max(0, state.deck.length + extraCards);
+  const drawOrder = getUpcomingNaturalDrawPlayers(state, deckSize + 1);
+  return drawOrder[deckSize] || null;
+};
 const getTopdeckDenialScore = (state, actor, count = 1) => {
   const opponent = getOpponent(actor);
   const drawPlayers = getUpcomingNaturalDrawPlayers(state, count);
