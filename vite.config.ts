@@ -4,6 +4,13 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(() => ({
   base: process.env.GITHUB_ACTIONS ? '/dandan/' : '/',
   plugins: [react()],
+  optimizeDeps: {
+    esbuildOptions: {
+      loader: {
+        '.ts': 'tsx'
+      }
+    }
+  },
   esbuild: {
     loader: 'tsx',
     include: /dandan\.ts$/

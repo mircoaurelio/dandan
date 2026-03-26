@@ -207,8 +207,7 @@ const MatchClockPill = ({ valueMs, running }) => {
         : 'border-slate-600/80 bg-slate-950/72 text-slate-200';
 
   return (
-    <div className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(2,6,23,0.28)] ${toneClass}`}>
-      <span className="opacity-80">Clock</span>
+    <div className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em] shadow-[0_10px_20px_rgba(2,6,23,0.28)] ${toneClass}`}>
       <span className="font-mono text-xs tracking-[0.08em]">{formatPeerClockMs(valueMs)}</span>
     </div>
   );
@@ -252,11 +251,11 @@ const POLICY_CONTENT = {
     sections: [
       {
         heading: 'What This Site Stores',
-        body: 'Forgetfull Fish stores a few gameplay and preference values in your browser so the app can work correctly. This includes your current saved game, your adventure progress, and a visual preference for the landing background.'
+        body: 'Forgetfull Fish stores a few gameplay and preference values in your browser so the app can work correctly. This includes your current saved game, your adventure progress, your preferred online nickname, and a visual preference for the landing background.'
       },
       {
         heading: 'What This Site Does Not Collect',
-        body: 'This site does not ask for your name, email address, or account details. It also does not use advertising trackers or analytics tools in the current version of the app.'
+        body: 'This site does not ask for your real name, email address, or account details. If you use online matchmaking, you can set a nickname that stays in your browser and is only used to coordinate peer-to-peer rooms. The app also does not use advertising trackers or analytics tools in the current version.'
       },
       {
         heading: 'Third-Party Requests',
@@ -278,7 +277,7 @@ const POLICY_CONTENT = {
       },
       {
         heading: 'Local Storage',
-        body: 'The app uses browser local storage for functional features: saving an unfinished match so you can continue later, storing adventure progress, and remembering the landing background selection.'
+        body: 'The app uses browser local storage for functional features: saving an unfinished match so you can continue later, storing adventure progress, remembering your online nickname, and remembering the landing background selection.'
       },
       {
         heading: 'Why It Is Used',
@@ -480,11 +479,17 @@ const RIVAL_PROGRESS_STORAGE_KEY = 'forgetful-fish-rival-progress-v1';
 const CURRENT_GAME_STORAGE_KEY = 'forgetful-fish-current-game-v1';
 const PEER_SESSION_STORAGE_KEY = 'forgetful-fish-peer-session-v1';
 const PEER_PROTOCOL_VERSION = 1;
+const ONLINE_PROFILE_STORAGE_KEY = 'forgetful-fish-online-profile-v1';
+const ONLINE_PROTOCOL_VERSION = 1;
 const PEER_RECONNECT_DELAY_MS = 1600;
 const PEER_DISCONNECT_GRACE_MS = 12000;
 const PEER_CLOCK_BASE_MS = 5 * 60 * 1000;
 const PEER_CLOCK_INCREMENT_MS = 5 * 1000;
 const PEER_CLOCK_MAX_MS = PEER_CLOCK_BASE_MS + PEER_CLOCK_INCREMENT_MS;
+const ONLINE_MATCH_BUCKET_MS = 6 * 60 * 60 * 1000;
+const ONLINE_NAME_MAX_LENGTH = 24;
+const ONLINE_LOBBY_HOST_PREFIX = 'ff-online-lobby';
+const ONLINE_MATCH_PREFIX = 'ff-online-match';
 const LANDING_BACKGROUNDS = [wall1Background, wall2Background, wall3Background, wall4Background];
 const MENU_PRELOAD_URLS = Array.from(new Set([
   ...Object.values(DIFFICULTY_ART),
@@ -595,6 +600,103 @@ const savePeerSessionDraft = (draft) => {
     window.sessionStorage.setItem(PEER_SESSION_STORAGE_KEY, JSON.stringify(draft));
   } catch (_error) {}
 };
+const sanitizeOnlinePlayerName = (value = '') => value
+  .replace(/[^\p{L}\p{N} ._-]+/gu, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, ONLINE_NAME_MAX_LENGTH);
+const normalizeOnlinePlayerName = (value = '') => sanitizeOnlinePlayerName(value).toLowerCase().replace(/\s+/g, '-');
+const loadOnlineProfile = () => {
+  if (typeof window === 'undefined') return { playerName: '' };
+  try {
+    const raw = window.localStorage.getItem(ONLINE_PROFILE_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return {
+      playerName: sanitizeOnlinePlayerName(parsed?.playerName || '')
+    };
+  } catch (_error) {
+    return { playerName: '' };
+  }
+};
+const saveOnlineProfile = (profile) => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(ONLINE_PROFILE_STORAGE_KEY, JSON.stringify({
+      playerName: sanitizeOnlinePlayerName(profile?.playerName || '')
+    }));
+  } catch (_error) {}
+};
+const getOnlineBucketInfo = (now = Date.now()) => {
+  const bucketIndex = Math.floor(now / ONLINE_MATCH_BUCKET_MS);
+  const bucketStartMs = bucketIndex * ONLINE_MATCH_BUCKET_MS;
+  const bucketEndMs = bucketStartMs + ONLINE_MATCH_BUCKET_MS;
+  return {
+    bucketIndex,
+    bucketStartMs,
+    bucketEndMs,
+    lobbyRoomId: `${ONLINE_LOBBY_HOST_PREFIX}-${bucketIndex.toString(36)}`,
+    bucketLabel: new Date(bucketStartMs).toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }),
+    rotationLabel: new Date(bucketEndMs).toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  };
+};
+const compareOnlineMatchPlayers = (left, right) => (
+  left.normalizedName.localeCompare(right.normalizedName) ||
+  left.clientId.localeCompare(right.clientId)
+);
+const hashOnlineValue = async (value) => {
+  if (typeof crypto?.subtle?.digest === 'function') {
+    const encoded = new TextEncoder().encode(value);
+    const buffer = await crypto.subtle.digest('SHA-256', encoded);
+    return Array.from(new Uint8Array(buffer), (part) => part.toString(16).padStart(2, '0')).join('');
+  }
+
+  let hash = 2166136261;
+  for (const char of value) {
+    hash ^= char.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const fallback = (hash >>> 0).toString(16).padStart(8, '0');
+  return fallback.repeat(8);
+};
+const buildOnlineMatchDescriptor = async ({ bucketStartMs, players }) => {
+  const orderedPlayers = players
+    .map((player) => {
+      const safeName = sanitizeOnlinePlayerName(player?.name || '') || `Player ${String(player?.clientId || '').slice(-4)}`;
+      return {
+        clientId: player?.clientId || generatePeerToken('online'),
+        name: safeName,
+        normalizedName: normalizeOnlinePlayerName(safeName) || String(player?.clientId || '').toLowerCase()
+      };
+    })
+    .sort(compareOnlineMatchPlayers);
+  const roomHash = await hashOnlineValue(`room|${bucketStartMs}|${orderedPlayers.map((player) => player.normalizedName).join('|')}`);
+  const tokenHash = await hashOnlineValue(`token|${bucketStartMs}|${orderedPlayers.map((player) => player.clientId).join('|')}|${orderedPlayers.map((player) => player.normalizedName).join('|')}`);
+
+  return {
+    type: 'online-match-found',
+    protocol: ONLINE_PROTOCOL_VERSION,
+    bucketStartMs,
+    roomId: `${ONLINE_MATCH_PREFIX}-${roomHash.slice(0, 24)}`,
+    token: `key-${tokenHash.slice(0, 24)}`,
+    hostClientId: orderedPlayers[0]?.clientId || '',
+    players: orderedPlayers
+  };
+};
+const getOnlineMatchRole = (match, localClientId) => (
+  match?.hostClientId && match.hostClientId === localClientId ? 'host' : 'guest'
+);
+const getOnlineMatchOpponent = (match, localClientId) => (
+  match?.players?.find((player) => player.clientId !== localClientId)?.name || 'Opponent'
+);
+const isUnavailablePeerIdError = (error) => error?.type === 'unavailable-id' || /taken|unavailable/i.test(error?.message || '');
 const getPeerGuestActionSeat = (state, action) => {
   switch (action.type) {
     case 'ACTIVATE_LAND_NOW':
@@ -1377,7 +1479,7 @@ const HomeActionButton = ({ label, onClick, className = '', labelClassName = '' 
   </button>
 );
 
-const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onFriends, onContinue, canContinue, onSettings }) => {
+const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onOnline, onFriends, onContinue, canContinue, onSettings }) => {
   if (variantId === 'duel') {
     return (
       <div className="w-full max-w-4xl mx-auto grid gap-3">
@@ -1401,6 +1503,12 @@ const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onFriends, onConti
               label="Play With Friends"
               onClick={onFriends}
               className="min-h-[96px] rounded-[1.8rem] border border-sky-200/45 bg-sky-50/78 px-5 py-5 text-left shadow-[0_20px_44px_rgba(15,23,42,0.16)] backdrop-blur-[2px]"
+              labelClassName="text-xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
+            />
+            <HomeActionButton
+              label="Play Online"
+              onClick={onOnline}
+              className="min-h-[96px] rounded-[1.8rem] border border-cyan-200/45 bg-cyan-50/78 px-5 py-5 text-left shadow-[0_20px_44px_rgba(15,23,42,0.16)] backdrop-blur-[2px]"
               labelClassName="text-xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
             />
             {canContinue && (
@@ -1445,6 +1553,12 @@ const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onFriends, onConti
           label="Play With Friends"
           onClick={onFriends}
           className="rounded-[1.55rem] border border-sky-300/70 bg-sky-50/88 px-5 py-5 text-left shadow-[0_18px_38px_rgba(15,23,42,0.18)] backdrop-blur-[2px]"
+          labelClassName="text-2xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
+        />
+        <HomeActionButton
+          label="Play Online"
+          onClick={onOnline}
+          className="rounded-[1.55rem] border border-cyan-300/70 bg-cyan-50/88 px-5 py-5 text-left shadow-[0_18px_38px_rgba(15,23,42,0.18)] backdrop-blur-[2px]"
           labelClassName="text-2xl sm:text-[2rem] font-semibold tracking-[-0.03em] text-slate-950"
         />
         {canContinue && (
@@ -1493,6 +1607,12 @@ const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onFriends, onConti
             className="rounded-[1.9rem] border border-sky-200/50 bg-sky-50/76 px-6 py-5 text-left shadow-[0_18px_36px_rgba(15,23,42,0.16)] backdrop-blur-[2px] sm:ml-10"
             labelClassName="text-2xl sm:text-[2.2rem] font-semibold tracking-[-0.03em] text-slate-950"
           />
+          <HomeActionButton
+            label="Play Online"
+            onClick={onOnline}
+            className="rounded-[1.9rem] border border-cyan-200/50 bg-cyan-50/76 px-6 py-5 text-left shadow-[0_18px_36px_rgba(15,23,42,0.16)] backdrop-blur-[2px] sm:ml-11"
+            labelClassName="text-2xl sm:text-[2.2rem] font-semibold tracking-[-0.03em] text-slate-950"
+          />
           {canContinue && (
             <HomeActionButton
               label="Continue"
@@ -1536,6 +1656,12 @@ const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onFriends, onConti
           className="rounded-[2rem] border border-sky-200/48 bg-sky-50/78 px-6 py-6 text-left shadow-[0_20px_44px_rgba(15,23,42,0.16)] backdrop-blur-[2px]"
           labelClassName="text-3xl sm:text-[3rem] font-semibold tracking-[-0.04em] text-slate-950"
         />
+        <HomeActionButton
+          label="Play Online"
+          onClick={onOnline}
+          className="rounded-[2rem] border border-cyan-200/48 bg-cyan-50/78 px-6 py-6 text-left shadow-[0_20px_44px_rgba(15,23,42,0.16)] backdrop-blur-[2px]"
+          labelClassName="text-3xl sm:text-[3rem] font-semibold tracking-[-0.04em] text-slate-950"
+        />
         {canContinue && (
           <HomeActionButton
             label="Continue"
@@ -1573,6 +1699,12 @@ const HomeMenuPanel = ({ variantId, onAdventure, onQuickGame, onFriends, onConti
         label="Play With Friends"
         onClick={onFriends}
         className="w-full max-w-[15.75rem] min-h-[56px] rounded-full bg-sky-900/40 p-0 shadow-[0_18px_36px_rgba(15,23,42,0.24)] hover:bg-sky-900/52"
+        labelClassName="text-[1.2rem] sm:text-[1.32rem] tracking-[0.02em] text-white"
+      />
+      <HomeActionButton
+        label="Play Online"
+        onClick={onOnline}
+        className="w-full max-w-[15.75rem] min-h-[56px] rounded-full bg-cyan-900/40 p-0 shadow-[0_18px_36px_rgba(15,23,42,0.24)] hover:bg-cyan-900/52"
         labelClassName="text-[1.2rem] sm:text-[1.32rem] tracking-[0.02em] text-white"
       />
       {canContinue && (
@@ -1970,6 +2102,118 @@ const PlayWithFriendsDialog = ({
   );
 };
 
+const ONLINE_MATCH_STATUS_LABELS = {
+  idle: 'Ready',
+  starting: 'Opening Lobby',
+  waiting: 'Matchmaking',
+  matched: 'Match Found',
+  launching: 'Opening Match Room',
+  error: 'Matchmaking Error'
+};
+
+const PlayOnlineDialog = ({
+  playerName,
+  status,
+  error,
+  note,
+  bucketLabel,
+  rotationLabel,
+  pendingMatch,
+  onClose,
+  onPlayerNameChange,
+  onStart,
+  onRetry,
+  onCancel
+}) => {
+  const isBusy = ['starting', 'waiting', 'matched', 'launching'].includes(status);
+  const hasPendingMatch = Boolean(pendingMatch?.roomId);
+  const statusLabel = ONLINE_MATCH_STATUS_LABELS[status] || 'Ready';
+  const primaryAction = status === 'error' ? onRetry : onStart;
+  const primaryLabel = status === 'error'
+    ? (hasPendingMatch ? 'Retry Match Room' : 'Retry Matchmaking')
+    : 'Start Matchmaking';
+
+  return (
+    <div onClick={isBusy ? onCancel : onClose} className="absolute inset-0 z-30 bg-black/82 flex items-start justify-center overflow-y-auto p-4 sm:p-6">
+      <div onClick={(event) => event.stopPropagation()} className="w-full max-w-xl rounded-[1.9rem] border border-slate-800 bg-slate-950 p-5 sm:p-6 text-left my-auto shadow-[0_30px_80px_rgba(0,0,0,0.5)]">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-cyan-200">
+              <Wifi size={18} />
+              <h2 className="font-arena-display text-2xl tracking-[0.08em] text-white">Play Online</h2>
+            </div>
+            <p className="mt-2 text-sm text-slate-400">Join the shared six-hour lobby, announce you are ready, then hop into a deterministic PeerJS match room.</p>
+          </div>
+          <button onClick={isBusy ? onCancel : onClose} className="w-10 h-10 rounded-2xl bg-slate-900 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 transition-all flex items-center justify-center">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[1.35rem] border border-white/10 bg-slate-900/78 px-4 py-4">
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Shared Lobby Window</div>
+            <div className="mt-2 text-sm text-cyan-100">{bucketLabel || 'Assigned when you start matchmaking'}</div>
+          </div>
+          <div className="rounded-[1.35rem] border border-white/10 bg-slate-900/78 px-4 py-4">
+            <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Next Rotation</div>
+            <div className="mt-2 text-sm text-cyan-100">{rotationLabel || 'Every 6 hours'}</div>
+          </div>
+        </div>
+
+        <label className="mt-4 grid gap-2">
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Nickname</span>
+          <input
+            value={playerName}
+            onChange={(event) => onPlayerNameChange(event.target.value)}
+            placeholder="Choose a nickname"
+            disabled={isBusy}
+            maxLength={ONLINE_NAME_MAX_LENGTH}
+            className="w-full rounded-2xl border border-slate-700 bg-slate-900/88 px-4 py-3 text-slate-100 outline-none focus:border-cyan-300 disabled:cursor-not-allowed disabled:opacity-70"
+          />
+          <div className="text-xs leading-5 text-slate-500">Stored only in this browser and used to derive the follow-up match room.</div>
+        </label>
+
+        <div className="mt-4 rounded-[1.4rem] border border-white/10 bg-white/[0.045] px-4 py-4">
+          <div className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-slate-300">
+            {isBusy ? <RefreshCw size={15} className="animate-spin" /> : status === 'error' ? <WifiOff size={15} /> : <Users size={15} />}
+            <span>{statusLabel}</span>
+          </div>
+          {note && <p className="mt-2 text-sm leading-5 text-slate-400">{note}</p>}
+          {error && <p className="mt-2 text-sm leading-5 text-rose-300">{error}</p>}
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {!isBusy && (
+            <button
+              onClick={primaryAction}
+              disabled={!playerName.trim()}
+              className="w-full min-h-[52px] rounded-2xl bg-[#38bdf8] hover:bg-[#22c7ff] disabled:bg-slate-700 disabled:text-slate-400 text-slate-950 font-bold tracking-[0.04em] uppercase transition-colors flex items-center justify-center gap-2"
+            >
+              <Play fill="currentColor" size={16} />
+              {primaryLabel}
+            </button>
+          )}
+          {isBusy && (
+            <button
+              onClick={onCancel}
+              className="w-full min-h-[52px] rounded-2xl bg-[#38bdf8] hover:bg-[#22c7ff] text-slate-950 font-bold tracking-[0.04em] uppercase transition-colors flex items-center justify-center gap-2 sm:col-span-2"
+            >
+              <RefreshCw size={16} className="animate-spin" />
+              Matchmaking...
+            </button>
+          )}
+          <button
+            onClick={isBusy ? onCancel : onClose}
+            className={`w-full min-h-[52px] rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-100 font-bold tracking-[0.04em] uppercase transition-colors border border-slate-700 ${isBusy ? 'sm:col-span-2' : ''}`}
+          >
+            {isBusy ? 'Cancel Search' : 'Close'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const HomeVariantBar = () => null;
 
 const LandingScreen = ({
@@ -1990,6 +2234,7 @@ const LandingScreen = ({
   onCloseLibrary,
   showQuickGameDialog,
   showFriendsDialog,
+  showOnlineDialog,
   selectedDifficulty,
   menuAssetsReady,
   onQuickGameOpen,
@@ -1997,6 +2242,8 @@ const LandingScreen = ({
   onQuickGameStart,
   onFriendsOpen,
   onFriendsClose,
+  onOnlineOpen,
+  onOnlineClose,
   friendDialogMode,
   friendRole,
   friendStatus,
@@ -2017,6 +2264,17 @@ const LandingScreen = ({
   onConnectFriendInvite,
   onDisconnectFriendInvite,
   onRetryFriendInvite,
+  onlinePlayerName,
+  onlineStatus,
+  onlineError,
+  onlineNote,
+  onlineBucketLabel,
+  onlineRotationLabel,
+  onlinePendingMatch,
+  onOnlinePlayerNameChange,
+  onStartOnlineMatchmaking,
+  onRetryOnlineMatchmaking,
+  onCancelOnlineMatchmaking,
   canContinueGame,
   onContinueGame,
   onAdventureOpen,
@@ -2209,6 +2467,7 @@ const LandingScreen = ({
                     variantId={homeVariant}
                     onAdventure={onAdventureOpen}
                     onQuickGame={onQuickGameOpen}
+                    onOnline={onOnlineOpen}
                     onFriends={onFriendsOpen}
                     onContinue={onContinueGame}
                     canContinue={canContinueGame}
@@ -2352,6 +2611,22 @@ const LandingScreen = ({
       )}
 
       {showQuickGameDialog && <QuickGameDialog selectedDifficulty={selectedDifficulty} onClose={onQuickGameClose} onStart={onQuickGameStart} />}
+      {showOnlineDialog && (
+        <PlayOnlineDialog
+          playerName={onlinePlayerName}
+          status={onlineStatus}
+          error={onlineError}
+          note={onlineNote}
+          bucketLabel={onlineBucketLabel}
+          rotationLabel={onlineRotationLabel}
+          pendingMatch={onlinePendingMatch}
+          onClose={onOnlineClose}
+          onPlayerNameChange={onOnlinePlayerNameChange}
+          onStart={onStartOnlineMatchmaking}
+          onRetry={onRetryOnlineMatchmaking}
+          onCancel={onCancelOnlineMatchmaking}
+        />
+      )}
       {showFriendsDialog && (
         <PlayWithFriendsDialog
           mode={friendDialogMode}
@@ -2418,6 +2693,8 @@ export default function App() {
     mode: inviteParams.roomId && inviteParams.token ? 'join' : (peerSessionDraft?.lastMode === 'join' ? 'join' : 'host'),
     role: null,
     status: 'idle',
+    playerDisplayName: '',
+    opponentDisplayName: '',
     roomId: '',
     token: '',
     inviteUrl: '',
@@ -2430,6 +2707,19 @@ export default function App() {
         ? 'Last friend invite restored. Reconnect when ready.'
         : ''
   }));
+  const [onlineUi, setOnlineUi] = useState(() => {
+    const profile = loadOnlineProfile();
+    return {
+      open: false,
+      playerName: profile.playerName,
+      status: 'idle',
+      error: '',
+      note: 'Enter a nickname to join the shared six-hour lobby.',
+      bucketLabel: '',
+      rotationLabel: '',
+      pendingMatch: null
+    };
+  });
   const hadPersistableGameRef = useRef(false);
   const latestStateRef = useRef(state);
   const peerRef = useRef(null);
@@ -2437,6 +2727,20 @@ export default function App() {
   const peerReconnectTimerRef = useRef(null);
   const peerDisconnectTimerRef = useRef(null);
   const peerClockRef = useRef(null);
+  const onlineLobbyPeerRef = useRef(null);
+  const onlineLobbyConnectionRef = useRef(null);
+  const onlineLaunchTimerRef = useRef(null);
+  const onlineMatchRef = useRef({
+    manualClose: false,
+    role: null,
+    playerName: '',
+    clientId: '',
+    lobbyRoomId: '',
+    bucketStartMs: 0,
+    bucketEndMs: 0,
+    pendingMatch: null,
+    launching: false
+  });
   const autoJoinInviteRef = useRef(Boolean(inviteParams.roomId && inviteParams.token));
   const peerSessionRef = useRef({
     role: null,
@@ -2486,6 +2790,8 @@ export default function App() {
   const displayedOpponentClockMs = showPeerClock ? getDisplayedPeerClockMs(peerClock, 'ai', clockRenderNow) : null;
   const isPlayerClockRunning = peerClock?.runningFor === 'player';
   const isOpponentClockRunning = peerClock?.runningFor === 'ai';
+  const peerOpponentName = peerUi.opponentDisplayName || 'Friend';
+  const peerPlayerName = peerUi.playerDisplayName || 'You';
   const canPlayerAttemptAttackSelection = !isAiMirror &&
     state.turn === 'player' &&
     state.phase === 'declare_attackers' &&
@@ -2530,6 +2836,7 @@ export default function App() {
   }, [peerClock]);
   useEffect(() => { AudioEngine.muted = muted; }, [muted]);
   useEffect(() => { saveRivalProgress(adventureWinsCount); }, [adventureWinsCount]);
+  useEffect(() => { saveOnlineProfile({ playerName: onlineUi.playerName }); }, [onlineUi.playerName]);
   useEffect(() => {
     if (!isPeekableDialogVisible && isBattlefieldPeekActive) {
       setIsBattlefieldPeekActive(false);
@@ -2627,12 +2934,57 @@ export default function App() {
     }, 120);
     return () => window.clearTimeout(timer);
   }, [peerUi.open, peerUi.mode, peerUi.role, peerUi.status, peerUi.joinRoomId, peerUi.joinToken]);
+  useEffect(() => {
+    if (onlineUi.status !== 'launching') return;
+    setOnlineUi((current) => {
+      if (current.status !== 'launching') return current;
+      if (peerUi.status === 'connected') {
+        return {
+          ...current,
+          open: false,
+          status: 'idle',
+          error: '',
+          note: current.pendingMatch?.opponentName
+            ? `Connected with ${current.pendingMatch.opponentName}.`
+            : 'Peer match connected.',
+          bucketLabel: '',
+          rotationLabel: '',
+          pendingMatch: null
+        };
+      }
+      if (peerUi.status === 'error') {
+        const nextError = peerUi.error || 'Unable to open the matched room.';
+        const nextNote = peerUi.note || current.note;
+        if (current.error === nextError && current.note === nextNote && current.status === 'error') {
+          return current;
+        }
+        return {
+          ...current,
+          status: 'error',
+          error: nextError,
+          note: nextNote
+        };
+      }
+      if (peerUi.note && (current.note !== peerUi.note || current.error)) {
+        return {
+          ...current,
+          error: '',
+          note: peerUi.note
+        };
+      }
+      return current;
+    });
+  }, [onlineUi.status, peerUi.status, peerUi.note, peerUi.error]);
   useEffect(() => () => {
     peerSessionRef.current.manualClose = true;
     if (peerReconnectTimerRef.current) window.clearTimeout(peerReconnectTimerRef.current);
     if (peerDisconnectTimerRef.current) window.clearTimeout(peerDisconnectTimerRef.current);
     try { peerConnectionRef.current?.close(); } catch (_error) {}
     try { peerRef.current?.destroy(); } catch (_error) {}
+    clearOnlineLaunchTimer();
+    onlineMatchRef.current.manualClose = true;
+    try { onlineLobbyConnectionRef.current?.close(); } catch (_error) {}
+    try { onlineLobbyPeerRef.current?.destroy(); } catch (_error) {}
   }, []);
 
   const refreshLandingBackground = () => {
@@ -2707,6 +3059,8 @@ export default function App() {
       mode: current.mode,
       role: null,
       status: 'idle',
+      playerDisplayName: '',
+      opponentDisplayName: '',
       roomId: '',
       token: '',
       inviteUrl: '',
@@ -2727,7 +3081,433 @@ export default function App() {
     };
   };
 
-  const connectGuestDataChannel = () => {
+  const updateOnlineUi = (updates) => {
+    setOnlineUi((current) => ({
+      ...current,
+      ...(typeof updates === 'function' ? updates(current) : updates)
+    }));
+  };
+
+  const clearOnlineLaunchTimer = () => {
+    if (onlineLaunchTimerRef.current) {
+      window.clearTimeout(onlineLaunchTimerRef.current);
+      onlineLaunchTimerRef.current = null;
+    }
+  };
+
+  const clearOnlineMatchmakingResources = ({ preservePendingMatch = true } = {}) => {
+    onlineMatchRef.current.manualClose = true;
+    clearOnlineLaunchTimer();
+
+    const connection = onlineLobbyConnectionRef.current;
+    if (connection) {
+      try { connection.close(); } catch (_error) {}
+    }
+
+    const peer = onlineLobbyPeerRef.current;
+    if (peer) {
+      try { peer.destroy(); } catch (_error) {}
+    }
+
+    const pendingMatch = preservePendingMatch ? onlineMatchRef.current.pendingMatch : null;
+    onlineLobbyConnectionRef.current = null;
+    onlineLobbyPeerRef.current = null;
+    onlineMatchRef.current = {
+      manualClose: true,
+      role: null,
+      playerName: '',
+      clientId: '',
+      lobbyRoomId: '',
+      bucketStartMs: 0,
+      bucketEndMs: 0,
+      pendingMatch,
+      launching: false
+    };
+  };
+
+  const disconnectOnlineMatchmaking = ({ keepDialog = false, note = 'Enter a nickname to join the shared six-hour lobby.', preservePendingMatch = false } = {}) => {
+    clearOnlineMatchmakingResources({ preservePendingMatch });
+    updateOnlineUi((current) => ({
+      ...current,
+      open: keepDialog,
+      status: 'idle',
+      error: '',
+      note,
+      bucketLabel: preservePendingMatch ? current.bucketLabel : '',
+      rotationLabel: preservePendingMatch ? current.rotationLabel : '',
+      pendingMatch: preservePendingMatch ? current.pendingMatch : null
+    }));
+  };
+
+  const sendOnlineLobbyMessageAndClose = (connection, message) => {
+    const sendAndClose = () => {
+      try { connection.send(message); } catch (_error) {}
+      try { connection.close(); } catch (_error) {}
+    };
+
+    if (connection?.open) {
+      sendAndClose();
+      return;
+    }
+
+    connection?.on('open', sendAndClose);
+  };
+
+  const launchOnlineMatchRoom = (matchSession) => {
+    if (!matchSession?.roomId || !matchSession?.token) return;
+    clearOnlineMatchmakingResources({ preservePendingMatch: true });
+    updateOnlineUi((current) => ({
+      ...current,
+      open: true,
+      status: 'launching',
+      error: '',
+      note: `Matched with ${matchSession.opponentName}. Opening the match room...`,
+      pendingMatch: matchSession
+    }));
+
+    if (matchSession.role === 'host') {
+      startHostInvite({
+        autoShare: false,
+        roomId: matchSession.roomId,
+        token: matchSession.token,
+        openDialog: false,
+        playerDisplayName: matchSession.playerName || '',
+        opponentDisplayName: matchSession.opponentName || '',
+        noteOverrides: {
+          creating: `Matched with ${matchSession.opponentName}. Opening the match room...`,
+          waiting: `Match room ready. Waiting for ${matchSession.opponentName}...`,
+          reconnecting: 'Lost contact with the signaling server. Retrying...',
+          error: 'Unable to open the matched room.'
+        }
+      });
+      return;
+    }
+
+    startGuestConnection({
+      roomId: matchSession.roomId,
+      token: matchSession.token,
+      openDialog: false,
+      playerDisplayName: matchSession.playerName || '',
+      opponentDisplayName: matchSession.opponentName || '',
+      noteOverrides: {
+        connecting: `Matched with ${matchSession.opponentName}. Joining the match room...`,
+        reconnecting: 'Signal lost. Retrying the matched room...',
+        error: 'Unable to join the matched room.'
+      }
+    });
+  };
+
+  const startOnlineLobbyAsGuest = ({ safeName, bucketInfo }) => {
+    const clientId = generatePeerToken('online');
+    const peer = new Peer(clientId, getPeerClientOptions());
+    onlineLobbyPeerRef.current = peer;
+
+    peer.on('open', () => {
+      if (onlineMatchRef.current.manualClose) return;
+      onlineMatchRef.current = {
+        ...onlineMatchRef.current,
+        role: 'guest',
+        playerName: safeName,
+        clientId
+      };
+      updateOnlineUi({
+        status: 'starting',
+        error: '',
+        note: 'Joining the shared lobby...'
+      });
+
+      const connection = peer.connect(bucketInfo.lobbyRoomId, {
+        reliable: true,
+        metadata: {
+          protocol: ONLINE_PROTOCOL_VERSION,
+          clientId,
+          playerName: safeName,
+          type: 'online-lobby'
+        }
+      });
+
+      onlineLobbyConnectionRef.current = connection;
+
+      connection.on('open', () => {
+        if (onlineMatchRef.current.manualClose) return;
+        updateOnlineUi({
+          status: 'waiting',
+          error: '',
+          note: `Ready in the shared lobby. Window started ${bucketInfo.bucketLabel}.`
+        });
+        connection.send({
+          type: 'online-ready',
+          protocol: ONLINE_PROTOCOL_VERSION,
+          clientId,
+          playerName: safeName,
+          bucketStartMs: bucketInfo.bucketStartMs
+        });
+      });
+
+      connection.on('data', (message) => {
+        if (!message || typeof message !== 'object' || message.protocol !== ONLINE_PROTOCOL_VERSION) return;
+        if (message.type === 'online-lobby-busy') {
+          updateOnlineUi({
+            status: 'error',
+            error: message.reason || 'This shared lobby is pairing another match right now.',
+            note: 'Wait a moment, then try matchmaking again.'
+          });
+          return;
+        }
+        if (message.type === 'online-match-found' && message.roomId && message.token) {
+          const matchSession = {
+            roomId: message.roomId,
+            token: message.token,
+            role: getOnlineMatchRole(message, clientId),
+            playerName: safeName,
+            opponentName: getOnlineMatchOpponent(message, clientId),
+            bucketLabel: bucketInfo.bucketLabel
+          };
+          onlineMatchRef.current = {
+            ...onlineMatchRef.current,
+            pendingMatch: matchSession,
+            launching: true
+          };
+          updateOnlineUi({
+            status: 'matched',
+            error: '',
+            note: `Matched with ${matchSession.opponentName}. Opening the match room...`,
+            pendingMatch: matchSession
+          });
+          launchOnlineMatchRoom(matchSession);
+        }
+      });
+
+      connection.on('close', () => {
+        if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+        onlineLobbyConnectionRef.current = null;
+        updateOnlineUi({
+          status: 'error',
+          error: 'The shared lobby closed before a match was assigned.',
+          note: 'Start matchmaking again to rejoin this six-hour window.'
+        });
+      });
+
+      connection.on('error', () => {
+        if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+        onlineLobbyConnectionRef.current = null;
+        updateOnlineUi({
+          status: 'error',
+          error: 'Unable to stay connected to the shared lobby.',
+          note: 'Start matchmaking again to retry.'
+        });
+      });
+    });
+
+    peer.on('disconnected', () => {
+      if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+      updateOnlineUi({
+        status: 'error',
+        error: 'Signal lost while joining the shared lobby.',
+        note: 'Start matchmaking again to retry.'
+      });
+    });
+
+    peer.on('error', (error) => {
+      if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+      updateOnlineUi({
+        status: 'error',
+        error: error?.message || 'Unable to join the shared lobby.',
+        note: 'Check the PeerJS configuration and try again.'
+      });
+    });
+  };
+
+  const beginOnlineMatchmaking = async () => {
+    const safeName = sanitizeOnlinePlayerName(onlineUi.playerName);
+    if (!safeName) {
+      updateOnlineUi({
+        open: true,
+        status: 'error',
+        error: 'Enter a nickname before starting matchmaking.',
+        note: 'Your nickname is used to derive the follow-up match room.'
+      });
+      return;
+    }
+
+    saveOnlineProfile({ playerName: safeName });
+    clearOnlineMatchmakingResources({ preservePendingMatch: false });
+
+    const bucketInfo = getOnlineBucketInfo();
+    onlineMatchRef.current = {
+      manualClose: false,
+      role: null,
+      playerName: safeName,
+      clientId: '',
+      lobbyRoomId: bucketInfo.lobbyRoomId,
+      bucketStartMs: bucketInfo.bucketStartMs,
+      bucketEndMs: bucketInfo.bucketEndMs,
+      pendingMatch: null,
+      launching: false
+    };
+
+    updateOnlineUi({
+      open: true,
+      playerName: safeName,
+      status: 'starting',
+      error: '',
+      note: 'Opening the shared lobby...',
+      bucketLabel: bucketInfo.bucketLabel,
+      rotationLabel: bucketInfo.rotationLabel,
+      pendingMatch: null
+    });
+
+    const peer = new Peer(bucketInfo.lobbyRoomId, getPeerClientOptions());
+    onlineLobbyPeerRef.current = peer;
+
+    peer.on('open', () => {
+      if (onlineMatchRef.current.manualClose) return;
+      onlineMatchRef.current = {
+        ...onlineMatchRef.current,
+        role: 'host',
+        clientId: bucketInfo.lobbyRoomId
+      };
+      updateOnlineUi({
+        status: 'waiting',
+        error: '',
+        note: `Lobby open. Waiting for another ready player in the window that started ${bucketInfo.bucketLabel}.`
+      });
+    });
+
+    peer.on('connection', (connection) => {
+      if (onlineMatchRef.current.manualClose) {
+        sendOnlineLobbyMessageAndClose(connection, {
+          type: 'online-lobby-busy',
+          protocol: ONLINE_PROTOCOL_VERSION,
+          reason: 'This shared lobby is shutting down.'
+        });
+        return;
+      }
+
+      if (onlineMatchRef.current.launching || (onlineLobbyConnectionRef.current && onlineLobbyConnectionRef.current !== connection)) {
+        sendOnlineLobbyMessageAndClose(connection, {
+          type: 'online-lobby-busy',
+          protocol: ONLINE_PROTOCOL_VERSION,
+          reason: 'This shared lobby is already pairing another player.'
+        });
+        return;
+      }
+
+      onlineLobbyConnectionRef.current = connection;
+
+      connection.on('data', async (message) => {
+        if (!message || typeof message !== 'object' || message.protocol !== ONLINE_PROTOCOL_VERSION || message.type !== 'online-ready') return;
+        const guestName = sanitizeOnlinePlayerName(message.playerName || connection.metadata?.playerName || '');
+        const guestClientId = message.clientId || connection.metadata?.clientId || connection.peer;
+
+        if (!guestName || !guestClientId) {
+          sendOnlineLobbyMessageAndClose(connection, {
+            type: 'online-lobby-busy',
+            protocol: ONLINE_PROTOCOL_VERSION,
+            reason: 'The incoming matchmaking payload was incomplete.'
+          });
+          onlineLobbyConnectionRef.current = null;
+          return;
+        }
+
+        const descriptor = await buildOnlineMatchDescriptor({
+          bucketStartMs: bucketInfo.bucketStartMs,
+          players: [
+            {
+              clientId: bucketInfo.lobbyRoomId,
+              name: safeName
+            },
+            {
+              clientId: guestClientId,
+              name: guestName
+            }
+          ]
+        });
+
+        if (onlineMatchRef.current.manualClose) return;
+
+        const matchSession = {
+          roomId: descriptor.roomId,
+          token: descriptor.token,
+          role: getOnlineMatchRole(descriptor, bucketInfo.lobbyRoomId),
+          playerName: safeName,
+          opponentName: getOnlineMatchOpponent(descriptor, bucketInfo.lobbyRoomId),
+          bucketLabel: bucketInfo.bucketLabel
+        };
+
+        onlineMatchRef.current = {
+          ...onlineMatchRef.current,
+          pendingMatch: matchSession,
+          launching: true
+        };
+
+        updateOnlineUi({
+          status: 'matched',
+          error: '',
+          note: `Matched with ${matchSession.opponentName}. Opening the match room...`,
+          pendingMatch: matchSession
+        });
+
+        try {
+          connection.send(descriptor);
+        } catch (_error) {}
+
+        clearOnlineLaunchTimer();
+        onlineLaunchTimerRef.current = window.setTimeout(() => {
+          launchOnlineMatchRoom(matchSession);
+        }, 280);
+      });
+
+      connection.on('close', () => {
+        if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+        onlineLobbyConnectionRef.current = null;
+        updateOnlineUi((current) => (
+          current.status === 'waiting'
+            ? { ...current, note: 'A player left the shared lobby. Waiting for another ready player...' }
+            : current
+        ));
+      });
+
+      connection.on('error', () => {
+        if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+        onlineLobbyConnectionRef.current = null;
+        updateOnlineUi({
+          status: 'error',
+          error: 'The shared lobby connection broke before the match room was assigned.',
+          note: 'Start matchmaking again to retry.'
+        });
+      });
+    });
+
+    peer.on('disconnected', () => {
+      if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+      updateOnlineUi({
+        status: 'error',
+        error: 'The shared lobby lost its signal.',
+        note: 'Start matchmaking again to reopen the current six-hour room.'
+      });
+    });
+
+    peer.on('error', (error) => {
+      if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+      if (isUnavailablePeerIdError(error)) {
+        try { peer.destroy(); } catch (_error) {}
+        if (onlineLobbyPeerRef.current === peer) {
+          onlineLobbyPeerRef.current = null;
+        }
+        startOnlineLobbyAsGuest({ safeName, bucketInfo });
+        return;
+      }
+
+      updateOnlineUi({
+        status: 'error',
+        error: error?.message || 'Unable to open the shared lobby.',
+        note: 'Check the PeerJS configuration and try again.'
+      });
+    });
+  };
+
+  const connectGuestDataChannel = ({ openDialog = true, noteOverrides = {} } = {}) => {
     const peer = peerRef.current;
     const { roomId, token, clientId } = peerSessionRef.current;
     if (!peer || !roomId || !token) return;
@@ -2749,7 +3529,7 @@ export default function App() {
         role: 'guest',
         status: 'connecting',
         error: '',
-        note: 'Connected to the room. Waiting for the host to sync the match...'
+        note: noteOverrides.connectedToRoom || 'Connected to the room. Waiting for the host to sync the match...'
       });
       connection.send({
         type: 'hello',
@@ -2763,7 +3543,7 @@ export default function App() {
       if (!message || typeof message !== 'object') return;
       if (message.protocol && message.protocol !== PEER_PROTOCOL_VERSION) {
         updatePeerUi({
-          open: true,
+          open: openDialog,
           mode: 'join',
           role: 'guest',
           status: 'error',
@@ -2781,7 +3561,7 @@ export default function App() {
           role: 'guest',
           status: 'connected',
           error: '',
-          note: 'Friend match connected.'
+          note: noteOverrides.connected || 'Friend match connected.'
         });
         savePeerSessionDraft({
           lastMode: 'join',
@@ -2835,13 +3615,13 @@ export default function App() {
         role: 'guest',
         status: 'reconnecting',
         error: '',
-        note: 'Connection dropped. Trying to rejoin the room...'
+        note: noteOverrides.reconnecting || 'Connection dropped. Trying to rejoin the room...'
       });
       peerReconnectTimerRef.current = window.setTimeout(() => {
         if (peerRef.current?.disconnected) {
           try { peerRef.current.reconnect(); } catch (_error) {}
         }
-        connectGuestDataChannel();
+        connectGuestDataChannel({ openDialog, noteOverrides });
       }, PEER_RECONNECT_DELAY_MS);
     });
 
@@ -2853,22 +3633,30 @@ export default function App() {
         role: 'guest',
         status: 'reconnecting',
         error: '',
-        note: 'Signal error. Trying to reconnect...'
+        note: noteOverrides.reconnecting || 'Signal error. Trying to reconnect...'
       });
       peerReconnectTimerRef.current = window.setTimeout(() => {
         if (peerRef.current?.disconnected) {
           try { peerRef.current.reconnect(); } catch (_error) {}
         }
-        connectGuestDataChannel();
+        connectGuestDataChannel({ openDialog, noteOverrides });
       }, PEER_RECONNECT_DELAY_MS);
     });
   };
 
-  const startHostInvite = async ({ autoShare = true } = {}) => {
+  const startHostInvite = async ({
+    autoShare = true,
+    roomId: roomIdOverride = '',
+    token: tokenOverride = '',
+    openDialog = true,
+    playerDisplayName = '',
+    opponentDisplayName = '',
+    noteOverrides = {}
+  } = {}) => {
     disconnectPeerSession({ notifyRemote: false, resetGame: false, keepDialog: false, preserveJoinFields: true });
 
-    const roomId = generatePeerToken('room');
-    const token = generatePeerToken('key');
+    const roomId = roomIdOverride || generatePeerToken('room');
+    const token = tokenOverride || generatePeerToken('key');
     const inviteUrl = buildPeerInviteUrl(roomId, token);
 
     peerSessionRef.current = {
@@ -2883,15 +3671,17 @@ export default function App() {
     };
 
     updatePeerUi({
-      open: true,
+      open: openDialog,
       mode: 'host',
       role: 'host',
       status: 'creating',
+      playerDisplayName,
+      opponentDisplayName,
       roomId,
       token,
       inviteUrl,
       error: '',
-      note: 'Opening your room and preparing the share link...'
+      note: noteOverrides.creating || 'Opening your room and preparing the share link...'
     });
 
     const peer = new Peer(roomId, getPeerClientOptions());
@@ -2905,7 +3695,7 @@ export default function App() {
         token,
         inviteUrl,
         error: '',
-        note: 'Invite ready. Share the link and keep this page open.'
+        note: noteOverrides.waiting || 'Invite ready. Share the link and keep this page open.'
       });
       savePeerSessionDraft({ lastMode: 'host', roomId, token, inviteUrl });
       if (autoShare && canShareFriendInvite) {
@@ -2913,7 +3703,7 @@ export default function App() {
           await navigator.share(buildPeerSharePayload(roomId, token, inviteUrl));
           updatePeerUi((current) => (
             current.role === 'host' && current.roomId === roomId
-              ? { ...current, note: 'Invite shared. Waiting for your friend to connect.' }
+              ? { ...current, note: noteOverrides.shared || 'Invite shared. Waiting for your friend to connect.' }
               : current
           ));
         } catch (_error) {}
@@ -2956,7 +3746,7 @@ export default function App() {
           role: 'host',
           status: 'connected',
           error: '',
-          note: 'Friend connected.'
+          note: noteOverrides.connected || 'Friend connected.'
         });
         try {
           connection.send({ type: 'session-accepted', protocol: PEER_PROTOCOL_VERSION });
@@ -3001,7 +3791,7 @@ export default function App() {
           role: 'host',
           status: 'reconnecting',
           error: '',
-          note: 'Friend disconnected. Keeping the room alive for a reconnect...'
+          note: noteOverrides.guestDisconnected || 'Friend disconnected. Keeping the room alive for a reconnect...'
         });
         peerDisconnectTimerRef.current = window.setTimeout(() => {
           peerSessionRef.current.guestClientId = '';
@@ -3010,7 +3800,7 @@ export default function App() {
             role: 'host',
             status: 'waiting',
             error: '',
-            note: 'Invite is still active. Waiting for your friend to reconnect.'
+            note: noteOverrides.waiting || 'Invite is still active. Waiting for your friend to reconnect.'
           }));
         }, PEER_DISCONNECT_GRACE_MS);
       });
@@ -3022,7 +3812,7 @@ export default function App() {
           role: 'host',
           status: 'reconnecting',
           error: '',
-          note: 'Room signal hiccup. Waiting for the guest to reconnect...'
+          note: noteOverrides.reconnecting || 'Room signal hiccup. Waiting for the guest to reconnect...'
         });
       });
     });
@@ -3033,7 +3823,7 @@ export default function App() {
         role: 'host',
         status: 'reconnecting',
         error: '',
-        note: 'Lost contact with the signaling server. Retrying...'
+        note: noteOverrides.reconnecting || 'Lost contact with the signaling server. Retrying...'
       });
       try { peer.reconnect(); } catch (_error) {}
     });
@@ -3041,19 +3831,26 @@ export default function App() {
     peer.on('error', (error) => {
       if (peerSessionRef.current.manualClose) return;
       updatePeerUi({
-        open: true,
+        open: openDialog,
         mode: 'host',
         role: 'host',
         status: 'error',
-        error: error?.message || 'Unable to open the friend room.',
-        note: 'Try again or check the PeerServer configuration.'
+        error: error?.message || noteOverrides.error || 'Unable to open the friend room.',
+        note: noteOverrides.errorNote || 'Try again or check the PeerServer configuration.'
       });
     });
   };
 
-  const startGuestConnection = () => {
-    const roomId = peerUi.joinRoomId.trim();
-    const token = peerUi.joinToken.trim();
+  const startGuestConnection = ({
+    roomId: roomIdOverride = null,
+    token: tokenOverride = null,
+    openDialog = true,
+    playerDisplayName = '',
+    opponentDisplayName = '',
+    noteOverrides = {}
+  } = {}) => {
+    const roomId = (roomIdOverride ?? peerUi.joinRoomId).trim();
+    const token = (tokenOverride ?? peerUi.joinToken).trim();
     if (!roomId || !token) {
       updatePeerUi({
         status: 'error',
@@ -3082,15 +3879,17 @@ export default function App() {
     };
 
     updatePeerUi({
-      open: true,
+      open: openDialog,
       mode: 'join',
       role: 'guest',
       status: 'connecting',
+      playerDisplayName,
+      opponentDisplayName,
       roomId: '',
       token: '',
       inviteUrl: '',
       error: '',
-      note: 'Contacting the host...'
+      note: noteOverrides.connecting || 'Contacting the host...'
     });
 
     const peer = new Peer(clientId, getPeerClientOptions());
@@ -3098,7 +3897,7 @@ export default function App() {
 
     peer.on('open', () => {
       savePeerSessionDraft({ lastMode: 'join', role: 'guest', roomId, token, clientId });
-      connectGuestDataChannel();
+      connectGuestDataChannel({ openDialog, noteOverrides });
     });
 
     peer.on('disconnected', () => {
@@ -3107,25 +3906,25 @@ export default function App() {
         role: 'guest',
         status: 'reconnecting',
         error: '',
-        note: 'Signal lost. Retrying the room...'
+        note: noteOverrides.reconnecting || 'Signal lost. Retrying the room...'
       });
       try { peer.reconnect(); } catch (_error) {}
       peerReconnectTimerRef.current = window.setTimeout(() => {
-        connectGuestDataChannel();
+        connectGuestDataChannel({ openDialog, noteOverrides });
       }, PEER_RECONNECT_DELAY_MS);
     });
 
     peer.on('error', (error) => {
       if (peerSessionRef.current.manualClose) return;
       updatePeerUi({
-        open: true,
+        open: openDialog,
         mode: 'join',
         role: 'guest',
         status: 'error',
         error: error?.type === 'peer-unavailable'
-          ? 'Host not found. Make sure the host opened the room first.'
-          : (error?.message || 'Unable to join the friend room.'),
-        note: 'You can retry with the same invite.'
+          ? (noteOverrides.unavailable || 'Host not found. Make sure the host opened the room first.')
+          : (error?.message || noteOverrides.error || 'Unable to join the friend room.'),
+        note: noteOverrides.errorNote || 'You can retry with the same invite.'
       });
     });
   };
@@ -3195,6 +3994,9 @@ export default function App() {
   const startMatch = (mode, aiCharacterId, playerAiCharacterId = null, difficultyOverride = selectedDifficulty) => {
     if (mode !== 'peer' && isPeerSessionActive) {
       disconnectPeerSession({ notifyRemote: peerUi.role === 'host', resetGame: false, keepDialog: false, note: 'Friend match closed.' });
+    }
+    if (mode !== 'peer') {
+      disconnectOnlineMatchmaking({ keepDialog: false, preservePendingMatch: false });
     }
     setDandanCastConfirm(null);
     setDandanAttackBlockedDialog(null);
@@ -3266,6 +4068,7 @@ export default function App() {
     if (isPeerSessionActive) {
       disconnectPeerSession({ notifyRemote: peerUi.role === 'host', resetGame: false, keepDialog: false, note: 'Friend match closed.' });
     }
+    disconnectOnlineMatchmaking({ keepDialog: false, preservePendingMatch: false });
     setShowQuickGameDialog(false);
     setShowMenuSettings(false);
     setShowRivalMenu(false);
@@ -3276,6 +4079,42 @@ export default function App() {
     setZoomedCard(null);
     setViewingZone(null);
     dispatch({ type: 'LOAD_SAVED_GAME', snapshot: savedGame });
+  };
+
+  const handleOpenOnlineDialog = () => {
+    updatePeerUi((current) => ({ ...current, open: false, error: '', note: current.note }));
+    updateOnlineUi((current) => ({
+      ...current,
+      open: true,
+      note: current.note || 'Enter a nickname to join the shared six-hour lobby.'
+    }));
+  };
+
+  const handleCloseOnlineDialog = () => {
+    updateOnlineUi((current) => ({
+      ...current,
+      open: false
+    }));
+  };
+
+  const handleCancelOnlineMatchmaking = () => {
+    if (onlineUi.status === 'launching' && peerUi.role && !state.started) {
+      disconnectPeerSession({
+        notifyRemote: peerUi.role === 'host',
+        resetGame: false,
+        keepDialog: false,
+        note: 'Matched room cancelled.'
+      });
+    }
+    disconnectOnlineMatchmaking({ keepDialog: false, preservePendingMatch: false });
+  };
+
+  const handleRetryOnlineMatchmaking = () => {
+    if (onlineUi.pendingMatch?.roomId && onlineUi.pendingMatch?.token) {
+      launchOnlineMatchRoom(onlineUi.pendingMatch);
+      return;
+    }
+    beginOnlineMatchmaking();
   };
 
   const resolveAiPendingAction = () => {
@@ -3301,6 +4140,7 @@ export default function App() {
     setShowQuickGameDialog(false);
     setShowMenuSettings(false);
     updatePeerUi((current) => ({ ...current, open: false, error: '', note: current.note }));
+    disconnectOnlineMatchmaking({ keepDialog: false, preservePendingMatch: false });
     setShowExitConfirm(false);
     setDandanCastConfirm(null);
     setDandanAttackBlockedDialog(null);
@@ -3465,12 +4305,16 @@ export default function App() {
         onCloseLibrary={() => setViewingZone(null)}
         showQuickGameDialog={showQuickGameDialog}
         showFriendsDialog={peerUi.open}
+        showOnlineDialog={onlineUi.open}
         selectedDifficulty={selectedDifficulty}
         menuAssetsReady={menuAssetsReady}
         onQuickGameOpen={() => setShowQuickGameDialog(true)}
         onQuickGameClose={() => setShowQuickGameDialog(false)}
         onQuickGameStart={handleStartQuickGame}
-        onFriendsOpen={() => updatePeerUi({ open: true, mode: peerUi.joinRoomId && peerUi.joinToken ? 'join' : 'host', error: '', note: peerUi.note })}
+        onFriendsOpen={() => {
+          updateOnlineUi((current) => ({ ...current, open: false }));
+          updatePeerUi({ open: true, mode: peerUi.joinRoomId && peerUi.joinToken ? 'join' : 'host', error: '', note: peerUi.note });
+        }}
         onFriendsClose={() => {
           if (peerUi.role && !state.started) {
             disconnectPeerSession({ notifyRemote: peerUi.role === 'host', resetGame: false, keepDialog: false, note: 'Friend match closed.' });
@@ -3478,6 +4322,8 @@ export default function App() {
           }
           updatePeerUi({ open: false, error: '', note: peerUi.note });
         }}
+        onOnlineOpen={handleOpenOnlineDialog}
+        onOnlineClose={handleCloseOnlineDialog}
         friendDialogMode={peerUi.mode}
         friendRole={peerUi.role}
         friendStatus={peerUi.status}
@@ -3504,6 +4350,17 @@ export default function App() {
           }
           startGuestConnection();
         }}
+        onlinePlayerName={onlineUi.playerName}
+        onlineStatus={onlineUi.status}
+        onlineError={onlineUi.error}
+        onlineNote={onlineUi.note}
+        onlineBucketLabel={onlineUi.bucketLabel}
+        onlineRotationLabel={onlineUi.rotationLabel}
+        onlinePendingMatch={onlineUi.pendingMatch}
+        onOnlinePlayerNameChange={(value) => updateOnlineUi({ playerName: sanitizeOnlinePlayerName(value), error: '' })}
+        onStartOnlineMatchmaking={beginOnlineMatchmaking}
+        onRetryOnlineMatchmaking={handleRetryOnlineMatchmaking}
+        onCancelOnlineMatchmaking={handleCancelOnlineMatchmaking}
         canContinueGame={hasSavedGame}
         onContinueGame={handleContinueSavedGame}
         onAdventureOpen={() => setMenuScreen('adventure')}
@@ -4397,7 +5254,7 @@ export default function App() {
                  <div className="absolute -bottom-1 -right-1 bg-red-900 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full border border-red-500 shadow-lg">{state.ai.life}</div>
               </div>
               <div className="flex flex-col">
-                 <span className="text-xs text-slate-100 font-black tracking-[0.08em] uppercase">{isPeerMatch ? 'Friend' : (currentOpponentCharacter?.name || AI_DIFFICULTY_LABELS[state.difficulty] || 'Opponent')}</span>
+                 <span className={`text-xs text-slate-100 font-black tracking-[0.08em] ${isPeerMatch ? '' : 'uppercase'}`}>{isPeerMatch ? peerOpponentName : (currentOpponentCharacter?.name || AI_DIFFICULTY_LABELS[state.difficulty] || 'Opponent')}</span>
                  <span className="text-[10px] text-slate-200 font-mono flex items-center gap-1">Hand: {state.ai.hand.length}</span>
                  {showPeerClock && displayedOpponentClockMs !== null && (
                    <div className="mt-1">
@@ -4476,7 +5333,7 @@ export default function App() {
                  <div className="absolute -bottom-1 -right-1 bg-blue-900 text-white text-[10px] font-black px-1.5 py-0.5 rounded-full border border-blue-400 shadow-lg">{state.player.life}</div>
               </div>
               <div className="flex flex-col">
-                 <span className="text-[10px] text-blue-300 font-bold uppercase tracking-wider">{isAiMirror ? 'AI South' : 'You'}</span>
+                 <span className={`text-[10px] text-blue-300 font-bold tracking-wider ${isPeerMatch && !isAiMirror ? '' : 'uppercase'}`}>{isAiMirror ? 'AI South' : isPeerMatch ? peerPlayerName : 'You'}</span>
                  {isAiMirror && currentPlayerAiCharacter && (
                    <span className="text-xs text-blue-100 font-black tracking-[0.08em] uppercase">{currentPlayerAiCharacter.name}</span>
                  )}
