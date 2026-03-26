@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.env*
+!.env.example
 .tmp-smoke/
 .tmp-rules-runtime/
 .tmp-training-runtime/

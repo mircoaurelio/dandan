@@ -525,6 +525,7 @@ const ONLINE_PROFILE_STORAGE_KEY = 'forgetful-fish-online-profile-v1';
 const ONLINE_PROTOCOL_VERSION = 1;
 const PEER_RECONNECT_DELAY_MS = 1600;
 const PEER_DISCONNECT_GRACE_MS = 12000;
+const PEER_CONNECT_TIMEOUT_MS = 18000;
 const PEER_CLOCK_BASE_MS = 5 * 60 * 1000;
 const PEER_CLOCK_INCREMENT_MS = 5 * 1000;
 const PEER_CLOCK_MAX_MS = PEER_CLOCK_BASE_MS + PEER_CLOCK_INCREMENT_MS;
@@ -532,6 +533,12 @@ const ONLINE_MATCH_BUCKET_MS = 6 * 60 * 60 * 1000;
 const ONLINE_NAME_MAX_LENGTH = 24;
 const ONLINE_LOBBY_HOST_PREFIX = 'ff-online-lobby';
 const ONLINE_MATCH_PREFIX = 'ff-online-match';
+const DEFAULT_PEER_STUN_URLS = [
+  'stun:stun.cloudflare.com:3478',
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+  'stun:stun2.l.google.com:19302'
+];
 const LANDING_BACKGROUNDS = [wall1Background, wall2Background, wall3Background, wall4Background];
 const MENU_PRELOAD_URLS = Array.from(new Set([
   ...Object.values(DIFFICULTY_ART),
@@ -595,6 +602,113 @@ const readPeerInviteParams = () => {
     mode: url.searchParams.get('peerMode') || ''
   };
 };
+const splitPeerIceEnvList = (value = '') => value
+  .split(/[\n,]+/)
+  .map((part) => part.trim())
+  .filter(Boolean);
+const normalizePeerIceServer = (server) => {
+  if (!server) return null;
+  const urls = Array.isArray(server.urls)
+    ? server.urls.map((url) => String(url || '').trim()).filter(Boolean)
+    : [String(server.urls || '').trim()].filter(Boolean);
+  if (urls.length === 0) return null;
+
+  const normalized = { urls };
+  if (server.username) normalized.username = String(server.username);
+  if (server.credential) normalized.credential = String(server.credential);
+  return normalized;
+};
+const resolvePeerIceServers = () => {
+  const iceServersValue = import.meta.env.VITE_PEER_ICE_SERVERS_JSON;
+  if (iceServersValue) {
+    try {
+      const parsed = JSON.parse(iceServersValue);
+      if (Array.isArray(parsed)) {
+        const normalized = parsed
+          .map(normalizePeerIceServer)
+          .filter(Boolean);
+        if (normalized.length > 0) {
+          return normalized;
+        }
+      }
+    } catch (_error) {}
+  }
+
+  const stunUrls = splitPeerIceEnvList(import.meta.env.VITE_PEER_STUN_URLS);
+  const turnUrls = splitPeerIceEnvList(import.meta.env.VITE_PEER_TURN_URLS);
+  const iceServers = [];
+  const resolvedStunUrls = stunUrls.length > 0 ? stunUrls : DEFAULT_PEER_STUN_URLS;
+
+  if (resolvedStunUrls.length > 0) {
+    iceServers.push({ urls: resolvedStunUrls });
+  }
+  if (turnUrls.length > 0) {
+    const turnServer = normalizePeerIceServer({
+      urls: turnUrls,
+      username: import.meta.env.VITE_PEER_TURN_USERNAME || '',
+      credential: import.meta.env.VITE_PEER_TURN_CREDENTIAL || ''
+    });
+    if (turnServer) {
+      iceServers.push(turnServer);
+    }
+  }
+
+  return iceServers;
+};
+const PEER_ICE_SERVERS = resolvePeerIceServers();
+const PEER_HAS_TURN_RELAY = PEER_ICE_SERVERS.some((server) => {
+  const urls = Array.isArray(server?.urls) ? server.urls : [server?.urls];
+  return urls.some((url) => /^turns?:/i.test(String(url || '')));
+});
+const getPeerReliabilityHint = () => (
+  PEER_HAS_TURN_RELAY
+    ? 'If this still fails, check that the TURN relay is reachable from both players.'
+    : 'This build has no TURN relay configured, so some carrier and mobile networks will not connect reliably.'
+);
+const buildPeerNetworkError = ({
+  error,
+  unavailableError,
+  defaultError,
+  defaultNote = ''
+}) => {
+  const type = String(error?.type || '').toLowerCase();
+  const message = String(error?.message || '').trim();
+  const relayHint = getPeerReliabilityHint();
+  const connectionFailed = type === 'webrtc' || /webrtc|ice|datachannel|connection failed|failed to connect/i.test(message);
+  const signalingFailed = type === 'network' || type === 'server-error' || type === 'socket-error' || type === 'socket-closed';
+  const unavailable = type === 'peer-unavailable' || type === 'unavailable-id' || /peer unavailable|id is taken|unavailable/i.test(message);
+
+  if (unavailable) {
+    return {
+      error: unavailableError,
+      note: defaultNote || 'Ask the host to keep the room open, then retry with the same invite.'
+    };
+  }
+  if (connectionFailed) {
+    return {
+      error: 'The two devices could not form a direct WebRTC connection.',
+      note: relayHint
+    };
+  }
+  if (signalingFailed) {
+    return {
+      error: message || defaultError,
+      note: 'The PeerJS signaling path is unstable. Check the PeerServer settings and try again.'
+    };
+  }
+  return {
+    error: message || defaultError,
+    note: defaultNote || relayHint
+  };
+};
+const getPeerConnectTimeoutState = ({
+  error,
+  note
+}) => ({
+  status: 'error',
+  error,
+  note: note || getPeerReliabilityHint()
+});
 const getPeerClientOptions = () => {
   const options = {
     debug: import.meta.env.DEV ? 1 : 0
@@ -603,7 +717,6 @@ const getPeerClientOptions = () => {
   const portValue = import.meta.env.VITE_PEER_PORT;
   const path = import.meta.env.VITE_PEER_PATH;
   const secureValue = import.meta.env.VITE_PEER_SECURE;
-  const iceServersValue = import.meta.env.VITE_PEER_ICE_SERVERS_JSON;
 
   if (host) {
     options.host = host;
@@ -612,13 +725,11 @@ const getPeerClientOptions = () => {
     options.secure = secureValue !== 'false';
   }
 
-  if (iceServersValue) {
-    try {
-      const parsed = JSON.parse(iceServersValue);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        options.config = { iceServers: parsed };
-      }
-    } catch (_error) {}
+  if (PEER_ICE_SERVERS.length > 0) {
+    options.config = {
+      iceServers: PEER_ICE_SERVERS,
+      iceCandidatePoolSize: 6
+    };
   }
 
   return options;
@@ -2229,6 +2340,11 @@ const PlayWithFriendsDialog = ({
           {note && <p className="mt-2 text-sm leading-5 text-slate-400">{note}</p>}
           {error && <p className="mt-2 text-sm leading-5 text-rose-300">{error}</p>}
         </div>
+        {!PEER_HAS_TURN_RELAY && (
+          <div className="mt-4 rounded-[1.2rem] border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
+            Direct peer-to-peer only. Some carrier and public mobile networks will fail until a TURN relay is configured.
+          </div>
+        )}
 
         {isHost ? (
           <div className="mt-4 grid gap-3">
@@ -2402,6 +2518,11 @@ const PlayOnlineDialog = ({
           {note && <p className="mt-2 text-sm leading-5 text-slate-400">{note}</p>}
           {error && <p className="mt-2 text-sm leading-5 text-rose-300">{error}</p>}
         </div>
+        {!PEER_HAS_TURN_RELAY && (
+          <div className="mt-4 rounded-[1.2rem] border border-amber-300/35 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-100">
+            Arena matchmaking still depends on direct WebRTC between the two browsers. Add a TURN relay for reliable cross-network play.
+          </div>
+        )}
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
           {!isBusy && (
@@ -3759,8 +3880,21 @@ export default function App() {
       });
 
       onlineLobbyConnectionRef.current = connection;
+      let didOpenLobbyConnection = false;
+      const lobbyConnectTimeout = window.setTimeout(() => {
+        if (didOpenLobbyConnection || onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
+        onlineLobbyConnectionRef.current = null;
+        try { connection.close(); } catch (_error) {}
+        updateOnlineUi({
+          status: 'error',
+          error: 'The shared lobby connection timed out before it opened.',
+          note: getPeerReliabilityHint()
+        });
+      }, PEER_CONNECT_TIMEOUT_MS);
 
       connection.on('open', () => {
+        didOpenLobbyConnection = true;
+        window.clearTimeout(lobbyConnectTimeout);
         if (onlineMatchRef.current.manualClose) return;
         updateOnlineUi({
           status: 'waiting',
@@ -3816,8 +3950,17 @@ export default function App() {
       });
 
       connection.on('close', () => {
+        window.clearTimeout(lobbyConnectTimeout);
         if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
         onlineLobbyConnectionRef.current = null;
+        if (!didOpenLobbyConnection) {
+          updateOnlineUi({
+            status: 'error',
+            error: 'The shared lobby closed before the peer connection opened.',
+            note: getPeerReliabilityHint()
+          });
+          return;
+        }
         updateOnlineUi({
           status: 'error',
           error: 'The shared lobby closed before a match was assigned.',
@@ -3825,9 +3968,23 @@ export default function App() {
         });
       });
 
-      connection.on('error', () => {
+      connection.on('error', (error) => {
+        window.clearTimeout(lobbyConnectTimeout);
         if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
         onlineLobbyConnectionRef.current = null;
+        if (!didOpenLobbyConnection) {
+          const issue = buildPeerNetworkError({
+            error,
+            unavailableError: 'The shared lobby host is no longer reachable.',
+            defaultError: 'Unable to stay connected to the shared lobby.',
+            defaultNote: getPeerReliabilityHint()
+          });
+          updateOnlineUi({
+            status: 'error',
+            ...issue
+          });
+          return;
+        }
         updateOnlineUi({
           status: 'error',
           error: 'Unable to stay connected to the shared lobby.',
@@ -3849,8 +4006,12 @@ export default function App() {
       if (onlineMatchRef.current.manualClose || onlineMatchRef.current.launching) return;
       updateOnlineUi({
         status: 'error',
-        error: error?.message || 'Unable to join the shared lobby.',
-        note: 'Check the PeerJS configuration and try again.'
+        ...buildPeerNetworkError({
+          error,
+          unavailableError: 'The shared lobby host is no longer reachable.',
+          defaultError: 'Unable to join the shared lobby.',
+          defaultNote: 'Check the PeerJS configuration and try again.'
+        })
       });
     });
   };
@@ -4051,8 +4212,12 @@ export default function App() {
 
       updateOnlineUi({
         status: 'error',
-        error: error?.message || 'Unable to open the shared lobby.',
-        note: 'Check the PeerJS configuration and try again.'
+        ...buildPeerNetworkError({
+          error,
+          unavailableError: 'This shared lobby id was already occupied, so the app is falling back to guest matchmaking.',
+          defaultError: 'Unable to open the shared lobby.',
+          defaultNote: 'Check the PeerJS configuration and try again.'
+        })
       });
     });
   };
@@ -4073,8 +4238,27 @@ export default function App() {
     });
 
     peerConnectionRef.current = connection;
+    let didOpenGuestConnection = false;
+    const guestConnectTimeout = window.setTimeout(() => {
+      if (didOpenGuestConnection || peerSessionRef.current.manualClose) return;
+      peerConnectionRef.current = null;
+      try { connection.close(); } catch (_error) {}
+      updatePeerUi({
+        open: openDialog,
+        mode: 'join',
+        role: 'guest',
+        localReady: false,
+        remoteReady: false,
+        ...getPeerConnectTimeoutState({
+          error: 'The room connection timed out before the peer link opened.',
+          note: `${getPeerReliabilityHint()} Ask the host to retry once after TURN is configured.`
+        })
+      });
+    }, PEER_CONNECT_TIMEOUT_MS);
 
     connection.on('open', () => {
+      didOpenGuestConnection = true;
+      window.clearTimeout(guestConnectTimeout);
       updatePeerUi({
         role: 'guest',
         status: 'connecting',
@@ -4221,7 +4405,23 @@ export default function App() {
     });
 
     connection.on('close', () => {
+      window.clearTimeout(guestConnectTimeout);
       if (peerSessionRef.current.manualClose) return;
+      if (!didOpenGuestConnection) {
+        peerConnectionRef.current = null;
+        updatePeerUi({
+          open: openDialog,
+          mode: 'join',
+          role: 'guest',
+          localReady: false,
+          remoteReady: false,
+          ...getPeerConnectTimeoutState({
+            error: 'The room closed before the peer link opened.',
+            note: getPeerReliabilityHint()
+          })
+        });
+        return;
+      }
       clearPeerTimers();
       peerConnectionRef.current = null;
       updatePeerUi({
@@ -4240,8 +4440,28 @@ export default function App() {
       }, PEER_RECONNECT_DELAY_MS);
     });
 
-    connection.on('error', () => {
+    connection.on('error', (error) => {
+      window.clearTimeout(guestConnectTimeout);
       if (peerSessionRef.current.manualClose) return;
+      if (!didOpenGuestConnection) {
+        peerConnectionRef.current = null;
+        const issue = buildPeerNetworkError({
+          error,
+          unavailableError: noteOverrides.unavailable || 'Host not found. Make sure the host opened the room first.',
+          defaultError: noteOverrides.error || 'Unable to join the friend room.',
+          defaultNote: noteOverrides.errorNote || getPeerReliabilityHint()
+        });
+        updatePeerUi({
+          open: openDialog,
+          mode: 'join',
+          role: 'guest',
+          localReady: false,
+          remoteReady: false,
+          status: 'error',
+          ...issue
+        });
+        return;
+      }
       clearPeerTimers();
       peerConnectionRef.current = null;
       updatePeerUi({
@@ -4493,8 +4713,12 @@ export default function App() {
         status: 'error',
         localReady: false,
         remoteReady: false,
-        error: error?.message || noteOverrides.error || 'Unable to open the friend room.',
-        note: noteOverrides.errorNote || 'Try again or check the PeerServer configuration.'
+        ...buildPeerNetworkError({
+          error,
+          unavailableError: 'The room id is already in use. Create a fresh invite and try again.',
+          defaultError: noteOverrides.error || 'Unable to open the friend room.',
+          defaultNote: noteOverrides.errorNote || 'Try again or check the PeerServer configuration.'
+        })
       });
     });
   };
@@ -4587,10 +4811,12 @@ export default function App() {
         status: 'error',
         localReady: false,
         remoteReady: false,
-        error: error?.type === 'peer-unavailable'
-          ? (noteOverrides.unavailable || 'Host not found. Make sure the host opened the room first.')
-          : (error?.message || noteOverrides.error || 'Unable to join the friend room.'),
-        note: noteOverrides.errorNote || 'You can retry with the same invite.'
+        ...buildPeerNetworkError({
+          error,
+          unavailableError: noteOverrides.unavailable || 'Host not found. Make sure the host opened the room first.',
+          defaultError: noteOverrides.error || 'Unable to join the friend room.',
+          defaultNote: noteOverrides.errorNote || 'You can retry with the same invite.'
+        })
       });
     });
   };
