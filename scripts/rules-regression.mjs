@@ -566,6 +566,37 @@ test('AI Predict does not cheat on an unknown top card', () => {
   expect(state.graveyard.some((card) => card.id === topCard.id), 'Predict still needs to mill the top card');
 });
 
+test('Mental Note mills a known top card before drawing the next card', () => {
+  const mentalNote = makeCard(CARDS.MENTAL_NOTE, { id: 'mental-note-known-top', owner: 'player' });
+  const topPredict = makeCard(CARDS.PREDICT, { id: 'mental-note-top-predict' });
+  const secondMilled = makeCard(CARDS.ISLAND_1, { id: 'mental-note-second-mill' });
+  const drawnCard = makeCard(CARDS.BRAINSTORM, { id: 'mental-note-draw', owner: 'player' });
+  const knowledge = withKnownTop(makeKnowledge(), 'player', [topPredict]);
+
+  let state = makeState({
+    turn: 'player',
+    priority: null,
+    stackResolving: true,
+    deck: [drawnCard, secondMilled, topPredict],
+    knowledge,
+    stack: [{ card: mentalNote, controller: 'player', target: null }],
+    player: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.graveyard.some((card) => card.id === topPredict.id), 'Mental Note should mill the known top card');
+  expect(state.graveyard.some((card) => card.id === secondMilled.id), 'Mental Note should mill the second card as well');
+  expect(state.player.hand.some((card) => card.id === drawnCard.id), 'Mental Note should draw the next card after milling');
+  expect(state.player.hand.every((card) => card.id !== topPredict.id), 'Mental Note should not draw the known top card it milled');
+  expect(state.knowledge.player.knownTop.length === 0, 'Mental Note should clear top-card knowledge after the known card is milled');
+});
+
 test('Chart a Course loses the game if the second draw is from an empty shared library', () => {
   const chart = makeCard(CARDS.CHART, { id: 'chart-empty-loss', owner: 'ai' });
   const lastCard = makeCard(CARDS.ISLAND_1, { id: 'chart-empty-last', owner: 'ai' });
@@ -838,16 +869,21 @@ test('medium AI targets the Dandan with Magical Hack when changing one land woul
   expect(['Plains', 'Swamp', 'Mountain', 'Forest'].includes(action.landTypeChoice), `Medium AI should choose a non-Island land type for the direct Dandan kill line, got ${action.landTypeChoice}`);
 });
 
-test('player choosing Island makes a hacked land count as an Island', () => {
+test('player choosing Island makes a hacked typed land count as an Island', () => {
   const magicalHack = makeCard(CARDS.MAGICAL_HACK, { id: 'hack-friendly-island', owner: 'player' });
-  const fengraf = makeCard(CARDS.FENGRAF, { id: 'hack-target-fengraf' });
+  const transformedIsland = makeCard(CARDS.ISLAND_2, {
+    id: 'hack-target-island',
+    landType: 'Swamp',
+    isSwamp: true,
+    blueSources: 0
+  });
   const island = makeCard(CARDS.ISLAND_1, { id: 'hack-support-island' });
 
   let state = makeState({
     player: {
       life: 20,
       hand: [magicalHack],
-      board: [island, fengraf],
+      board: [island, transformedIsland],
       landsPlayed: 0
     },
     ai: {
@@ -858,13 +894,13 @@ test('player choosing Island makes a hacked land count as an Island', () => {
     }
   });
 
-  state = reducer(state, { type: 'CAST_SPELL', player: 'player', cardId: magicalHack.id, target: fengraf, landTypeChoice: 'Island' });
+  state = reducer(state, { type: 'CAST_SPELL', player: 'player', cardId: magicalHack.id, target: transformedIsland, landTypeChoice: 'Island' });
   state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
   state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
   expect(state.stackResolving === true, 'Magical Hack with Island choice did not reach stack resolution');
   state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
 
-  const hackedLand = state.player.board.find((card) => card.id === fengraf.id);
+  const hackedLand = state.player.board.find((card) => card.id === transformedIsland.id);
   expect(hackedLand?.landType === 'Island', 'Chosen Island land type was not applied');
   expect(hackedLand?.blueSources === 1, 'Chosen Island land type did not grant blue mana');
   expect(controlsIsland(state.player.board), 'Chosen Island land type should count as an Island in game logic');
@@ -872,8 +908,8 @@ test('player choosing Island makes a hacked land count as an Island', () => {
 
 test('Magical Hack remains permanent after cleanup and the next turn', () => {
   const magicalHack = makeCard(CARDS.MAGICAL_HACK, { id: 'hack-permanent-card', owner: 'player' });
-  const fengraf = makeCard(CARDS.FENGRAF, { id: 'hack-permanent-fengraf' });
-  const island = makeCard(CARDS.ISLAND_1, { id: 'hack-permanent-island' });
+  const targetIsland = makeCard(CARDS.ISLAND_2, { id: 'hack-permanent-island' });
+  const supportIsland = makeCard(CARDS.ISLAND_1, { id: 'hack-permanent-support' });
 
   let state = makeState({
     turn: 'player',
@@ -882,7 +918,7 @@ test('Magical Hack remains permanent after cleanup and the next turn', () => {
     player: {
       life: 20,
       hand: [magicalHack],
-      board: [island, fengraf],
+      board: [supportIsland, targetIsland],
       landsPlayed: 0
     },
     ai: {
@@ -893,22 +929,84 @@ test('Magical Hack remains permanent after cleanup and the next turn', () => {
     }
   });
 
-  state = reducer(state, { type: 'CAST_SPELL', player: 'player', cardId: magicalHack.id, target: fengraf, landTypeChoice: 'Island' });
+  state = reducer(state, { type: 'CAST_SPELL', player: 'player', cardId: magicalHack.id, target: targetIsland, landTypeChoice: 'Swamp' });
   state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
   state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
   state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
 
-  let hackedLand = state.player.board.find((card) => card.id === fengraf.id);
-  expect(hackedLand?.landType === 'Island', 'Magical Hack should apply before cleanup');
+  let hackedLand = state.player.board.find((card) => card.id === targetIsland.id);
+  expect(hackedLand?.landType === 'Swamp', 'Magical Hack should apply before cleanup');
+  expect(hackedLand?.blueSources === 0, 'Magical Hack should remove Island blue mana when it changes the land type');
 
   state.phase = 'cleanup';
   state.priority = 'player';
   state = reducer(state, { type: 'NEXT_PHASE' });
 
-  hackedLand = state.player.board.find((card) => card.id === fengraf.id);
-  expect(hackedLand?.landType === 'Island', 'Magical Hack should not wear off during cleanup');
-  expect(hackedLand?.blueSources === 1, 'Magical Hack should keep Island blue mana after cleanup');
+  hackedLand = state.player.board.find((card) => card.id === targetIsland.id);
+  expect(hackedLand?.landType === 'Swamp', 'Magical Hack should not wear off during cleanup');
+  expect(hackedLand?.blueSources === 0, 'Magical Hack should keep the changed land type after cleanup');
   expect(hackedLand?.temporaryTextChangeBaseState == null, 'Magical Hack should not leave a temporary text-change marker');
+});
+
+test('Magical Hack does not change an untyped blue land like Halimar Depths', () => {
+  const magicalHack = makeCard(CARDS.MAGICAL_HACK, { id: 'hack-halimar-card', owner: 'ai' });
+  const halimar = makeCard(CARDS.HALIMAR, { id: 'hack-halimar-target', owner: 'player' });
+  const aiIsland = makeCard(CARDS.ISLAND_1, { id: 'hack-halimar-ai-island' });
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main1',
+    priority: 'ai',
+    ai: {
+      life: 20,
+      hand: [magicalHack],
+      board: [aiIsland],
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [halimar],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: magicalHack.id, target: halimar, landTypeChoice: 'Swamp' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  const untouchedHalimar = state.player.board.find((card) => card.id === halimar.id);
+  expect(untouchedHalimar?.landType == null, 'Magical Hack should not give Halimar Depths a fake basic land type');
+  expect(untouchedHalimar?.blueSources === 1, 'Magical Hack should not remove Halimar Depths blue mana');
+  expect(untouchedHalimar?.isSwamp === false, 'Magical Hack should not mark Halimar Depths as a Swamp');
+});
+
+test('AI does not cast Magical Hack at Halimar Depths when it would do nothing', () => {
+  const magicalHack = makeCard(CARDS.MAGICAL_HACK, { id: 'hack-halimar-ai-card', owner: 'ai' });
+  const halimar = makeCard(CARDS.HALIMAR, { id: 'hack-halimar-ai-target', owner: 'player' });
+  const aiIsland = makeCard(CARDS.ISLAND_1, { id: 'hack-halimar-ai-fuel' });
+
+  const state = makeState({
+    turn: 'ai',
+    phase: 'main1',
+    priority: 'ai',
+    ai: {
+      life: 20,
+      hand: [magicalHack],
+      board: [aiIsland],
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [halimar],
+      landsPlayed: 0
+    }
+  });
+
+  const action = chooseAiAction(state, 'ai', 'medium', tacticalPolicy);
+  expect(!(action.type === 'CAST_SPELL' && action.cardId === magicalHack.id), 'AI should not spend Magical Hack on Halimar Depths when no text changes apply');
 });
 
 test('Magical Hack can choose a third land type to kill Dandan through Island plus Swamp support', () => {
@@ -1671,6 +1769,63 @@ test('Metamorphose can put Control Magic onto the battlefield from hand', () => 
   expect(Boolean(auraOnBoard), 'Control Magic should enter the battlefield from Metamorphose');
   expect(Boolean(stolenDandan), 'Control Magic from Metamorphose should steal the chosen creature');
   expect(stolenDandan?.controlledByAuraId === auraOnBoard?.id, 'Metamorphosed Control Magic should stay linked to the stolen creature');
+});
+
+test('Control Magic preserves the creature owner for later Metamorphose deployment', () => {
+  const ownerlessDandan = makeCard(CARDS.DANDAN, { id: 'meta-ownerless-dandan', owner: null, summoningSickness: false });
+  const controlMagic = makeCard(CARDS.CONTROL_MAGIC, { id: 'meta-ownerless-aura', owner: 'player' });
+  const metamorphose = makeCard(CARDS.METAMORPHOSE, { id: 'meta-ownerless-spell', owner: 'ai' });
+  const aiFollowUp = makeCard(CARDS.DANDAN, { id: 'meta-ownerless-follow-up', owner: 'ai' });
+  const playerIslands = [
+    makeCard(CARDS.ISLAND_1, { id: 'meta-ownerless-player-island-1' }),
+    makeCard(CARDS.ISLAND_2, { id: 'meta-ownerless-player-island-2' }),
+    makeCard(CARDS.ISLAND_3, { id: 'meta-ownerless-player-island-3' }),
+    makeCard(CARDS.ISLAND_4, { id: 'meta-ownerless-player-island-4' })
+  ];
+  const aiIslands = [
+    makeCard(CARDS.ISLAND_1, { id: 'meta-ownerless-ai-island-1' }),
+    makeCard(CARDS.ISLAND_2, { id: 'meta-ownerless-ai-island-2' })
+  ];
+
+  let state = makeState({
+    turn: 'player',
+    phase: 'main1',
+    priority: 'player',
+    player: {
+      life: 20,
+      hand: [controlMagic],
+      board: playerIslands,
+      landsPlayed: 0
+    },
+    ai: {
+      life: 20,
+      hand: [metamorphose, aiFollowUp],
+      board: [...aiIslands, ownerlessDandan],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'player', cardId: controlMagic.id, target: ownerlessDandan });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  expect(state.stackResolving === true, 'Control Magic did not move to stack resolution in the owner-preservation test');
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  const stolenCreature = state.player.board.find((card) => card.id === ownerlessDandan.id);
+  expect(stolenCreature?.owner === 'ai', 'Control Magic should backfill the stolen creature owner from its previous controller');
+
+  state.turn = 'ai';
+  state.phase = 'main1';
+  state.priority = 'ai';
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: metamorphose.id, target: stolenCreature });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  expect(state.stackResolving === true, 'Metamorphose did not move to stack resolution in the owner-preservation test');
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.pendingAction == null, 'Metamorphose should not prompt the wrong player once ownership is preserved');
+  expect(state.ai.board.some((card) => card.id === aiFollowUp.id), 'The original owner should be able to deploy a permanent after reclaiming its stolen creature');
+  expect(state.player.board.every((card) => card.id !== aiFollowUp.id), 'Metamorphose should not hand the deployment choice to the current controller');
 });
 
 test('zone changes reset a transformed Dandan back to Island dependency', () => {

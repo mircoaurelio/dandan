@@ -457,6 +457,11 @@ export const LAND_TYPE_CHOICES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Fore
 const isLandTypeChoice = (landType) => LAND_TYPE_CHOICES.includes(landType);
 const isLandTypeChoiceSpell = (spellName) => ['Magical Hack', 'Crystal Spray'].includes(spellName);
 const getPrintedLandType = (card) => card.type?.includes('Island') ? 'Island' : null;
+const getCardOwner = (card, fallbackController = null) => card?.owner || fallbackController || null;
+const canApplyLandTypeTextChangeToCard = (card) => Boolean(card) && (
+  card.name === DANDAN_NAME ||
+  (card.isLand && Boolean(getPrintedLandType(card)))
+);
 const createTextChangeStateSnapshot = (card) => ({
   landType: card.landType ?? getPrintedLandType(card),
   isSwamp: Boolean(card.isSwamp),
@@ -476,14 +481,14 @@ const getLandTextChangeSnapshot = (landType) => ({
   blueSources: landType === 'Island' ? 1 : 0
 });
 const getCardTextChangeSnapshotForLandType = (card, landType) => {
-  if (!isLandTypeChoice(landType)) return null;
+  if (!isLandTypeChoice(landType) || !canApplyLandTypeTextChangeToCard(card)) return null;
   if (card.name === DANDAN_NAME) {
     return {
       ...createTextChangeStateSnapshot(card),
       dandanLandType: landType
     };
   }
-  if (card.isLand) {
+  if (card.isLand && getPrintedLandType(card)) {
     return {
       ...createTextChangeStateSnapshot(card),
       ...getLandTextChangeSnapshot(landType)
@@ -895,6 +900,14 @@ const drawCards = (s, player, count) => {
   }
   return true;
 };
+const millTopCardToGraveyard = (state) => {
+  if (state.deck.length === 0) return null;
+  const milled = state.deck.pop();
+  consumeTopKnowledgeCard(state, milled);
+  state.graveyard.push(milled);
+  return milled;
+};
+const millTopCardsToGraveyard = (state, count) => Array.from({ length: Math.max(0, count) }, () => millTopCardToGraveyard(state)).filter(Boolean);
 
 const drawAlternating = (s, firstPlayer, count) => {
   const secondPlayer = firstPlayer === 'player' ? 'ai' : 'player';
@@ -928,7 +941,7 @@ const syncControlEffects = (state) => {
       if (card.enchantedId && creatureIds.has(card.enchantedId)) {
         const normalizedAura = {
           ...card,
-          owner: card.owner || card.currentController,
+          owner: getCardOwner(card, card.currentController),
           attachmentOrder: card.attachmentOrder ?? 0
         };
         if (!aurasByCreatureId[card.enchantedId]) aurasByCreatureId[card.enchantedId] = [];
@@ -937,12 +950,12 @@ const syncControlEffects = (state) => {
         return;
       }
 
-      state.graveyard.push({ ...clearAttachmentState(stripBoardMarker(card)), owner: card.owner || card.currentController });
+      state.graveyard.push({ ...clearAttachmentState(stripBoardMarker(card)), owner: getCardOwner(card, card.currentController) });
       changed = true;
     });
 
   allCreatures.forEach(card => {
-    const owner = card.owner || card.currentController;
+    const owner = getCardOwner(card, card.currentController);
     const attachedAuras = [...(aurasByCreatureId[card.id] || [])].sort((a, b) => (a.attachmentOrder || 0) - (b.attachmentOrder || 0));
     const winningAura = attachedAuras.length > 0 ? attachedAuras[attachedAuras.length - 1] : null;
     const targetController = winningAura ? winningAura.currentController : owner;
@@ -950,6 +963,7 @@ const syncControlEffects = (state) => {
     const nextControlledByAuraId = winningAura?.id || null;
     const nextCreature = {
       ...stripBoardMarker(card),
+      owner,
       controlledByAuraId: nextControlledByAuraId,
       summoningSickness: controllerChanged ? true : card.summoningSickness,
       attacking: controllerChanged ? false : card.attacking,
@@ -2183,9 +2197,10 @@ const resolveControlMagicBattlefieldEntry = (state, controller, auraCard, target
   if (!targetController || targetIdx < 0) return false;
 
   const [stolen] = state[targetController].board.splice(targetIdx, 1);
+  const stolenOwner = getCardOwner(stolen, targetController);
   const aura = {
     ...clearAttachmentState(auraCard),
-    owner: auraCard.owner || controller,
+    owner: getCardOwner(auraCard, controller),
     summoningSickness: false,
     enchantedId: stolen.id,
     attachmentOrder: state.actionCount || 0
@@ -2193,6 +2208,7 @@ const resolveControlMagicBattlefieldEntry = (state, controller, auraCard, target
   const controllerChanged = targetController !== controller;
   const enchantedCreature = {
     ...stolen,
+    owner: stolenOwner,
     controlledByAuraId: aura.id,
     summoningSickness: controllerChanged ? true : stolen.summoningSickness,
     attacking: controllerChanged ? false : stolen.attacking,
@@ -2203,7 +2219,7 @@ const resolveControlMagicBattlefieldEntry = (state, controller, auraCard, target
   return true;
 };
 const putLandOntoBattlefield = (state, player, land, { countAsLandPlay = false, logAction = null, viaMetamorphose = false } = {}) => {
-  const permanent = preparePermanentForZoneChange(land, { owner: land.owner || player });
+  const permanent = preparePermanentForZoneChange(land, { owner: getCardOwner(land, player) });
   const entersTapped = ['Lonely Sandbar', 'Remote Isle', 'The Surgical Bay', 'Svyelunite Temple', 'Halimar Depths', 'Mystic Sanctuary'].includes(permanent.name);
   permanent.tapped = entersTapped;
 
@@ -2282,7 +2298,7 @@ const resolveMetamorphoseDeployment = (state, player, cardId, selectedTargetId =
   }
 
   if (isCreatureCard(chosenCard)) {
-    state[player].board.push(preparePermanentForZoneChange(chosenCard, { owner: chosenCard.owner || player }));
+    state[player].board.push(preparePermanentForZoneChange(chosenCard, { owner: getCardOwner(chosenCard, player) }));
     logAction?.(`${getSeatLabel(player)} put ${chosenCard.name} onto the battlefield with Metamorphose.`);
     return true;
   }
@@ -3615,6 +3631,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         effects.playLand();
         const [land] = s[action.player].hand.splice(landIdx, 1);
         removeKnownHandCard(s, action.player, land.id);
+        land.owner = getCardOwner(land, action.player);
         
         const entersTapped = ['Lonely Sandbar', 'Remote Isle', 'The Surgical Bay', 'Svyelunite Temple', 'Halimar Depths', 'Mystic Sanctuary'].includes(land.name);
         land.tapped = entersTapped;
@@ -3879,6 +3896,7 @@ export const createGameReducer = (effects = defaultEffects) => {
       }
 
       else if (spell.card.name === 'DandÃ¢n') {
+        spell.card.owner = getCardOwner(spell.card, spell.controller);
         spell.card.summoningSickness = true; 
         s[spell.controller].board.push(spell.card);
       } 
@@ -3887,7 +3905,7 @@ export const createGameReducer = (effects = defaultEffects) => {
            const targetIdx = s.stack.findIndex(st => st.card.id === spell.target.card.id);
            if (targetIdx > -1) {
              const [countered] = s.stack.splice(targetIdx, 1);
-             const returnedSpell = prepareCardForZoneChange(countered.card, { owner: countered.card.owner || countered.controller });
+             const returnedSpell = prepareCardForZoneChange(countered.card, { owner: getCardOwner(countered.card, countered.controller) });
              s.deck.push(returnedSpell);
              prependKnownTopCard(s, 'all', returnedSpell);
              logAction(`${returnedSpell.name} was Memory Lapsed to top of library!`);
@@ -3908,7 +3926,7 @@ export const createGameReducer = (effects = defaultEffects) => {
                 }
             });
             if (bounced) {
-              const owner = bounced.owner || targetController;
+              const owner = getCardOwner(bounced, targetController);
               const resetPermanent = preparePermanentForZoneChange(bounced, { owner });
               s.deck.push(resetPermanent);
               prependKnownTopCard(s, 'all', resetPermanent);
@@ -3937,7 +3955,7 @@ export const createGameReducer = (effects = defaultEffects) => {
           const stackIdx = isSpellStackEntry(spell.target) ? s.stack.findIndex(st => st.card.id === spell.target.card?.id) : -1;
           if (stackIdx > -1) {
              const [bounced] = s.stack.splice(stackIdx, 1); 
-             const owner = bounced.card.owner || bounced.controller;
+             const owner = getCardOwner(bounced.card, bounced.controller);
              const returnedSpell = prepareCardForZoneChange(bounced.card, { owner });
              s[owner].hand.push(returnedSpell);
              KNOWLEDGE_PLAYERS.forEach(viewer => addKnownHandCard(s, viewer, owner, returnedSpell));
@@ -3947,7 +3965,7 @@ export const createGameReducer = (effects = defaultEffects) => {
               const bIdx = s[p2].board.findIndex(c => c.id === spell.target.id);
               if (bIdx > -1) {
                 const [bounced] = s[p2].board.splice(bIdx, 1);
-                const owner = bounced.owner || p2;
+                const owner = getCardOwner(bounced, p2);
                 const returned = preparePermanentForZoneChange(bounced);
                 s[owner].hand.push(returned);
                 KNOWLEDGE_PLAYERS.forEach(viewer => addKnownHandCard(s, viewer, owner, returned));
@@ -4095,10 +4113,8 @@ export const createGameReducer = (effects = defaultEffects) => {
             return s;
         } else {
             const guess = getAiPredictGuess(s, spell.controller);
-            const milled = s.deck.length ? s.deck.pop() : null;
+            const milled = millTopCardToGraveyard(s);
             if (milled) {
-                consumeTopKnowledgeCard(s, milled);
-                s.graveyard.push(milled);
                 logAction(`${getSeatLabel(spell.controller)} named ${guess} for Predict. Predict milled ${milled.name}.`);
                 if(milled.name === guess) { drawCards(s, spell.controller, 2); } 
                 else { drawCards(s, spell.controller, 1); }
@@ -4120,13 +4136,7 @@ export const createGameReducer = (effects = defaultEffects) => {
       }
       else if (spell.card.name === 'Mental Note') {
         s.graveyard.push(spell.card);
-        for(let i=0; i<2; i++) {
-          if (s.deck.length) {
-            const milled = s.deck.pop();
-            consumeTopKnowledgeCard(s, milled);
-            s.graveyard.push(milled);
-          }
-        }
+        millTopCardsToGraveyard(s, 2);
         drawCards(s, spell.controller, 1);
       }
       else if (spell.card.name === "Day's Undoing") {
@@ -4255,9 +4265,7 @@ export const createGameReducer = (effects = defaultEffects) => {
            logAction(`${getSeatLabel(pendingPlayer)} discarded a card.`);
         } else if (s.pendingAction.type === 'PREDICT') {
            if(s.deck.length) {
-               const milled = s.deck.pop();
-               consumeTopKnowledgeCard(s, milled);
-               s.graveyard.push(milled);
+               const milled = millTopCardToGraveyard(s);
                logAction(`${getSeatLabel(pendingPlayer)} named ${action.guess || 'a card'} for Predict. Predict milled ${milled.name}.`);
                if(milled.name === action.guess) { drawCards(s, pendingPlayer, 2); } 
                else { drawCards(s, pendingPlayer, 1); }
