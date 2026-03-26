@@ -959,7 +959,6 @@ const OpeningRollD20 = ({
 };
 const APP_VERSION = 'v0.3.1';
 const ONLINE_MULTIPLAYER_ENABLED = false;
-const ONLINE_MULTIPLAYER_DISABLED_NOTE = 'Online multiplayer was removed from this build to avoid exposing player IP addresses through direct browser-to-browser matches.';
 const ADVENTURE_ROUTE = ['shark', 'archivist', 'eel', 'siren', 'undertow', 'cartographer', 'piranha', 'hermit', 'tortoise', 'leviathan'];
 const ADVENTURE_MAP_LAYOUT = [
   { left: 12, top: 78 },
@@ -3424,11 +3423,6 @@ const LandingScreen = ({
                     canContinue={canContinueGame}
                     onSettings={onOpenSettings}
                   />
-                  {!ONLINE_MULTIPLAYER_ENABLED && (
-                    <div className="mt-4 max-w-xl rounded-[1.4rem] border border-amber-300/25 bg-amber-400/8 px-4 py-3 text-sm leading-6 text-amber-100 shadow-[0_16px_36px_rgba(15,23,42,0.16)]">
-                      {ONLINE_MULTIPLAYER_DISABLED_NOTE}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

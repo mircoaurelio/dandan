@@ -2,10 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("./assets/fonts/Cinzel-600.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("./assets/fonts/Cinzel-700.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url("./assets/fonts/Cinzel-800.ttf") format("truetype");
+}
+
+@font-face {
+  font-family: "Cinzel";
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url("./assets/fonts/Cinzel-900.ttf") format("truetype");
+}
+
 :root {
   color-scheme: dark;
   --font-ui: "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-arena-display: "Copperplate Gothic Bold", "Book Antiqua", Georgia, serif;
+  --font-arena-display: "Cinzel", "Copperplate Gothic Bold", Georgia, serif;
   font-family: var(--font-ui);
   background: #020617;
 }
