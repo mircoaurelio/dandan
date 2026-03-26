@@ -3,7 +3,7 @@ import { Play, SkipForward, Activity, Layers, Skull, Image as ImageIcon, Setting
 import { Peer } from 'peerjs';
 import $ from 'jquery';
 import 'jquery.ripples';
-import { AI_CHARACTERS, AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, AI_SPEED, CARDS, DANDAN_NAME, DEFAULT_AI_CHARACTER_ID, FULL_DECKLIST, LAND_TYPE_CHOICES, PREDICT_OPTIONS, SHARED_DECK_SIZE, canDandanAttackDefender, checkHasActions, chooseAiAction, controlsIsland, createGameReducer, getAiCharacter, getAiPendingActions, getAiPolicyForActor, getAvailableMana, getManaPool, initialState, isActivatable, isCastable, isCyclable, isValidTarget } from './src/game/engine';
+import { AI_CHARACTERS, AI_DIFFICULTIES, AI_DIFFICULTY_LABELS, AI_SPEED, CARDS, DANDAN_NAME, DEFAULT_AI_CHARACTER_ID, FULL_DECKLIST, LAND_TYPE_CHOICES, PREDICT_OPTIONS, SHARED_DECK_SIZE, canDandanAttackDefender, checkHasActions, chooseAiAction, controlsIsland, createGameReducer, getAiCharacter, getAiPendingActions, getAiPolicyForActor, getAvailableMana, getManaPool, initialState, isActivatable, isCastable, isCyclable, isValidTarget, qualifiesForDandanFreeMulligan } from './src/game/engine';
 import { buildPeerGuestViewState, inflatePeerGuestViewState, mapGuestActionToCanonical } from './src/game/peerView';
 import archivistPortrait from './img/Archivist.png';
 import cartographerPortrait from './img/Cartographer.png';
@@ -145,6 +145,36 @@ const AudioEngine = {
     this.playSplash(780, 220, 0.28, 0.05);
     this.playTone(620, 'triangle', 0.22, 0.04, 980); 
     setTimeout(() => this.playBubble(1120, 0.13, 0.03), 120);
+  },
+  playOpeningRoll() {
+    this.playSplash(260, 120, 0.45, 0.055);
+    this.playTone(210, 'triangle', 0.28, 0.026, 330);
+    setTimeout(() => this.playTone(320, 'square', 0.18, 0.018, 520), 110);
+    setTimeout(() => this.playBubble(640, 0.1, 0.02), 200);
+  },
+  playOpeningRollTick(progress = 0) {
+    if (!this.ctx || this.muted) return;
+    const normalized = Math.max(0, Math.min(1, progress));
+    const bodyStart = 720 - (normalized * 210) + (Math.random() * 45);
+    const bodyEnd = 260 - (normalized * 55);
+    const bodyVolume = 0.018 + ((1 - normalized) * 0.012);
+    const clickFreq = 950 - (normalized * 180) + (Math.random() * 60);
+    const clickEnd = 520 - (normalized * 70);
+    const clickVolume = 0.007 + ((1 - normalized) * 0.006);
+
+    this.playSplash(bodyStart, bodyEnd, 0.065, bodyVolume);
+    this.playTone(clickFreq, 'square', 0.045, clickVolume, clickEnd, true);
+  },
+  playOpeningRollResult(playerStarts = true) {
+    if (playerStarts) {
+      this.playTone(420, 'triangle', 0.16, 0.028, 720);
+      setTimeout(() => this.playTone(680, 'sine', 0.2, 0.036, 1080), 100);
+      setTimeout(() => this.playBubble(980, 0.12, 0.026), 190);
+      return;
+    }
+    this.playTone(330, 'triangle', 0.16, 0.024, 220);
+    setTimeout(() => this.playTone(250, 'sawtooth', 0.2, 0.02, 170, true), 95);
+    setTimeout(() => this.playBubble(480, 0.1, 0.018), 180);
   },
   playMatchFound() {
     this.playTone(440, 'triangle', 0.14, 0.03, 660);
@@ -410,13 +440,104 @@ const PeekableDialogOverlay = ({
   </>
 );
 
+const OpeningRollOverlay = ({
+  value = 1,
+  frameIndex = 0,
+  phase = 'rolling',
+  startingPlayer = 'player',
+  playerLabel = 'You',
+  opponentLabel = 'Opponent',
+  playerAvatarSrc = CARDS.DANDAN.image,
+  opponentAvatarSrc = CARDS.DANDAN.image
+}) => {
+  const settled = phase === 'settled';
+  const playerStarts = startingPlayer === 'player';
+  const publicOpponentLabel = 'Opponent';
+  const resultLabel = settled
+    ? (playerStarts ? `${playerLabel} start first` : `${publicOpponentLabel} start first`)
+    : 'Rolling the die...';
+
+  const renderSeatBadge = ({ label, avatarSrc, active, side, showLabel = true }) => (
+    <div
+      className={`flex items-center gap-3 rounded-[1.4rem] border py-3 text-left shadow-[0_18px_44px_rgba(2,6,23,0.45)] backdrop-blur-md transition-all duration-300 ${
+        active
+          ? 'border-cyan-200/65 bg-cyan-300/14 text-white'
+          : 'border-white/10 bg-slate-950/66 text-slate-300'
+      } ${showLabel ? 'min-w-[132px] px-3' : 'px-2'} ${side === 'left' ? 'justify-start' : 'justify-end'}`}
+    >
+      {side === 'right' && showLabel && (
+        <div className="min-w-0 text-right">
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{active ? 'Starts' : 'Waiting'}</div>
+          <div className="truncate font-arena-display text-lg uppercase tracking-[0.08em] text-white">{label}</div>
+        </div>
+      )}
+      <div className={`relative shrink-0 rounded-full p-[2px] ${active ? 'bg-gradient-to-br from-cyan-200 to-sky-400 shadow-[0_0_24px_rgba(56,189,248,0.35)]' : 'bg-white/10'}`}>
+        <img src={avatarSrc} alt={showLabel ? label : 'Opponent avatar'} className="h-14 w-14 rounded-full object-cover border border-slate-900/80" />
+      </div>
+      {side === 'left' && showLabel && (
+        <div className="min-w-0">
+          <div className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{active ? 'Starts' : 'Waiting'}</div>
+          <div className="truncate font-arena-display text-lg uppercase tracking-[0.08em] text-white">{label}</div>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[220] overflow-hidden bg-[rgba(2,6,23,0.86)] backdrop-blur-[2px]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_14%,rgba(34,211,238,0.18),transparent_26%),radial-gradient(circle_at_20%_32%,rgba(125,211,252,0.12),transparent_20%),radial-gradient(circle_at_80%_36%,rgba(14,165,233,0.1),transparent_22%),linear-gradient(180deg,rgba(2,6,23,0.28)_0%,rgba(2,6,23,0.72)_52%,rgba(2,6,23,0.96)_100%)]" />
+      <div className="absolute inset-x-[8%] top-[56%] h-px bg-gradient-to-r from-transparent via-cyan-200/30 to-transparent" />
+      <div className="absolute left-1/2 top-[59%] h-6 w-[72%] -translate-x-1/2 rounded-full bg-cyan-400/14 blur-2xl" />
+      <div className="absolute inset-x-[-10%] bottom-[9%] h-[30%] rounded-[100%] bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.22),rgba(8,47,73,0.08)_34%,transparent_72%)] blur-3xl" />
+
+      <div className="relative z-10 flex h-full flex-col items-center justify-center px-6 text-center">
+        <div className="text-[10px] font-black uppercase tracking-[0.34em] text-cyan-200/80">Opening Roll</div>
+        <h2 className="mt-3 font-arena-display text-4xl uppercase tracking-[0.12em] text-white sm:text-5xl">D20 For The Play</h2>
+        <p className="mt-4 max-w-2xl text-sm text-slate-300 sm:text-base">
+          {settled
+            ? (playerStarts ? `${playerLabel} won the roll and will take the first turn.` : `${publicOpponentLabel} won the roll. ${playerLabel} will play second.`)
+            : 'The die is rolling across the battlefield. Even gives you the first turn, odd gives it to your opponent.'}
+        </p>
+
+        <div className="mt-8 flex w-full max-w-3xl items-center justify-center gap-3 sm:gap-8">
+          {renderSeatBadge({ label: playerLabel, avatarSrc: playerAvatarSrc, active: playerStarts, side: 'left', showLabel: true })}
+          <div className="hidden text-[10px] font-black uppercase tracking-[0.24em] text-slate-500 sm:block">vs</div>
+          {renderSeatBadge({ label: opponentLabel, avatarSrc: opponentAvatarSrc, active: !playerStarts, side: 'right', showLabel: false })}
+        </div>
+
+        <div className="relative mt-8 flex h-[320px] w-full max-w-2xl items-center justify-center">
+          <div className="absolute left-1/2 top-[70%] h-10 w-[55%] -translate-x-1/2 rounded-full bg-slate-950/90 blur-xl" />
+          <div className="absolute left-1/2 top-[68%] h-14 w-[40%] -translate-x-1/2 rounded-full bg-cyan-300/14 blur-2xl" />
+          <div className="relative h-[15.5rem] w-[15.5rem] sm:h-[17rem] sm:w-[17rem]">
+            <OpeningRollD20
+              value={value}
+              frameIndex={frameIndex}
+              phase={phase}
+              playerStarts={playerStarts}
+            />
+          </div>
+        </div>
+
+        <div className={`rounded-full border px-5 py-2 text-[11px] font-black uppercase tracking-[0.22em] shadow-[0_18px_40px_rgba(2,6,23,0.48)] ${
+          settled
+            ? (playerStarts ? 'border-cyan-200/45 bg-cyan-300/12 text-cyan-50' : 'border-amber-200/40 bg-amber-300/12 text-amber-50')
+            : 'border-white/10 bg-slate-950/72 text-slate-200'
+        }`}>
+          {resultLabel}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const getHandFanStyle = (index, total, side = 'bottom') => {
+  const isDesktopViewport = typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches;
   const center = (total - 1) / 2;
   const distanceFromCenter = index - center;
-  const spread = Math.min(42, 240 / Math.max(1, total - 1));
+  const spread = Math.min(isDesktopViewport ? 92 : 42, (isDesktopViewport ? 540 : 240) / Math.max(1, total - 1));
   const offsetX = distanceFromCenter * spread;
-  const rotation = distanceFromCenter * 4.5;
-  const arcDepth = Math.pow(Math.abs(distanceFromCenter), 1.35) * 5;
+  const rotation = distanceFromCenter * (isDesktopViewport ? 5.8 : 4.5);
+  const arcDepth = Math.pow(Math.abs(distanceFromCenter), 1.35) * (isDesktopViewport ? 7.2 : 5);
   const offsetY = side === 'bottom' ? arcDepth : -arcDepth;
 
   return {
@@ -501,6 +622,341 @@ const getPlayerAvatarLabel = (avatarMode, avatarPresetId) => (
     ? 'Custom Upload'
     : PLAYER_AVATAR_PRESET_OPTIONS.find((avatar) => avatar.id === avatarPresetId)?.name || 'Dandan'
 );
+const OPENING_ROLL_FRAME_DELAYS_MS = [90, 95, 100, 110, 120, 135, 150, 170, 190, 220, 250, 290];
+const OPENING_ROLL_SETTLE_DELAY_MS = 2400;
+const clampOpeningRoll = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 1;
+  return Math.max(1, Math.min(20, Math.round(numeric)));
+};
+const rollOpeningD20 = () => clampOpeningRoll(Math.floor(Math.random() * 20) + 1);
+const getOpeningSeatFromRoll = (roll) => (clampOpeningRoll(roll) % 2 === 0 ? 'player' : 'ai');
+const buildOpeningRollSequence = (finalRoll) => {
+  let current = rollOpeningD20();
+  const frames = [];
+  for (let index = 0; index < OPENING_ROLL_FRAME_DELAYS_MS.length - 1; index += 1) {
+    current = ((current + 2 + Math.floor(Math.random() * 16)) % 20) + 1;
+    frames.push(current);
+  }
+  frames.push(clampOpeningRoll(finalRoll));
+  return frames;
+};
+const D20_VERTICES = (() => {
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const rawVertices = [
+    [-1, phi, 0],
+    [1, phi, 0],
+    [-1, -phi, 0],
+    [1, -phi, 0],
+    [0, -1, phi],
+    [0, 1, phi],
+    [0, -1, -phi],
+    [0, 1, -phi],
+    [phi, 0, -1],
+    [phi, 0, 1],
+    [-phi, 0, -1],
+    [-phi, 0, 1]
+  ];
+  const length = Math.hypot(rawVertices[0][0], rawVertices[0][1], rawVertices[0][2]);
+  return rawVertices.map(([x, y, z]) => ({ x: x / length, y: y / length, z: z / length }));
+})();
+const D20_FACE_SETS = [
+  [0, 11, 5],
+  [0, 5, 1],
+  [0, 1, 7],
+  [0, 7, 10],
+  [0, 10, 11],
+  [1, 5, 9],
+  [5, 11, 4],
+  [11, 10, 2],
+  [10, 7, 6],
+  [7, 1, 8],
+  [3, 9, 4],
+  [3, 4, 2],
+  [3, 2, 6],
+  [3, 6, 8],
+  [3, 8, 9],
+  [4, 9, 5],
+  [2, 4, 11],
+  [6, 2, 10],
+  [8, 6, 7],
+  [9, 8, 1]
+];
+const subtractVector = (a, b) => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const crossVector = (a, b) => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x
+});
+const dotVector = (a, b) => (a.x * b.x) + (a.y * b.y) + (a.z * b.z);
+const normalizeVector = (vector) => {
+  const length = Math.hypot(vector.x, vector.y, vector.z) || 1;
+  return { x: vector.x / length, y: vector.y / length, z: vector.z / length };
+};
+const rotateVector = (vertex, rotation) => {
+  let { x, y, z } = vertex;
+
+  const cosY = Math.cos(rotation.y);
+  const sinY = Math.sin(rotation.y);
+  const xAfterY = x * cosY + z * sinY;
+  const zAfterY = -x * sinY + z * cosY;
+  x = xAfterY;
+  z = zAfterY;
+
+  const cosX = Math.cos(rotation.x);
+  const sinX = Math.sin(rotation.x);
+  const yAfterX = y * cosX - z * sinX;
+  const zAfterX = y * sinX + z * cosX;
+  y = yAfterX;
+  z = zAfterX;
+
+  const cosZ = Math.cos(rotation.z);
+  const sinZ = Math.sin(rotation.z);
+  const xAfterZ = x * cosZ - y * sinZ;
+  const yAfterZ = x * sinZ + y * cosZ;
+
+  return { x: xAfterZ, y: yAfterZ, z };
+};
+const D20_FACES = D20_FACE_SETS.map((indices, index) => {
+  let faceIndices = [...indices];
+  let vertices = faceIndices.map((vertexIndex) => D20_VERTICES[vertexIndex]);
+  const rawCenter = {
+    x: (vertices[0].x + vertices[1].x + vertices[2].x) / 3,
+    y: (vertices[0].y + vertices[1].y + vertices[2].y) / 3,
+    z: (vertices[0].z + vertices[1].z + vertices[2].z) / 3
+  };
+  const center = normalizeVector(rawCenter);
+  let normal = normalizeVector(crossVector(
+    subtractVector(vertices[1], vertices[0]),
+    subtractVector(vertices[2], vertices[0])
+  ));
+  if (dotVector(normal, center) < 0) {
+    faceIndices = [faceIndices[0], faceIndices[2], faceIndices[1]];
+    const correctedVertices = faceIndices.map((vertexIndex) => D20_VERTICES[vertexIndex]);
+    vertices = correctedVertices;
+    normal = normalizeVector(crossVector(
+      subtractVector(correctedVertices[1], correctedVertices[0]),
+      subtractVector(correctedVertices[2], correctedVertices[0])
+    ));
+  }
+  const topVertex = [...vertices].sort((a, b) => (
+    b.y - a.y
+  ) || (
+    Math.abs(a.x) - Math.abs(b.x)
+  ))[0];
+  const axisY = normalizeVector(subtractVector(topVertex, rawCenter));
+  const axisX = normalizeVector(crossVector(axisY, normal));
+  return {
+    label: index + 1,
+    indices: faceIndices,
+    normal,
+    center,
+    axisX,
+    axisY
+  };
+});
+const projectD20Vertex = (vertex, size = 240, cameraDistance = 4.2) => {
+  const depth = Math.max(0.28, cameraDistance - vertex.z);
+  const scale = cameraDistance / depth;
+  const half = size / 2;
+  const radius = size * 0.36;
+  return {
+    x: half + (vertex.x * radius * scale),
+    y: half - (vertex.y * radius * scale),
+    depth: vertex.z,
+    scale
+  };
+};
+const getTriangleArea2D = (points) => {
+  const [a, b, c] = points;
+  return Math.abs(
+    (a.x * (b.y - c.y)) +
+    (b.x * (c.y - a.y)) +
+    (c.x * (a.y - b.y))
+  ) / 2;
+};
+const getSettledOpeningRollRotation = (value) => {
+  const targetValue = clampOpeningRoll(value);
+  const face = D20_FACES.find((entry) => entry.label === targetValue) || D20_FACES[0];
+  const yaw = Math.atan2(-face.center.x, face.center.z);
+  const centerAfterYaw = rotateVector(face.center, { x: 0, y: yaw, z: 0 });
+  const pitch = Math.atan2(centerAfterYaw.y, centerAfterYaw.z);
+  const roll = ((targetValue % 5) - 2) * 0.08;
+  return {
+    x: pitch - 0.12,
+    y: yaw + (targetValue % 2 === 0 ? -0.06 : 0.06),
+    z: roll
+  };
+};
+const getOpeningRollRotation = ({ value, frameIndex = 0, phase = 'rolling' }) => {
+  const settledRotation = getSettledOpeningRollRotation(value);
+  if (phase === 'settled') return settledRotation;
+  const spinFactor = Math.max(1, 11 - frameIndex);
+  return {
+    x: settledRotation.x + (spinFactor * 0.42) + (frameIndex * 0.48),
+    y: settledRotation.y + (spinFactor * 0.55) + (frameIndex * 0.7),
+    z: settledRotation.z + (spinFactor * 0.35) + (frameIndex * 0.58)
+  };
+};
+const OpeningRollD20 = ({
+  value = 1,
+  frameIndex = 0,
+  phase = 'rolling',
+  playerStarts = true
+}) => {
+  const settled = phase === 'settled';
+  const rotation = getOpeningRollRotation({ value, frameIndex, phase });
+  const rotatedVertices = D20_VERTICES.map((vertex) => rotateVector(vertex, rotation));
+  const projectedVertices = rotatedVertices.map((vertex) => projectD20Vertex(vertex));
+  const baseHue = settled ? (playerStarts ? 193 : 34) : 198;
+  const hoverOffset = settled ? -10 : (-10 + Math.sin(frameIndex * 0.7) * 6);
+  const dieScale = settled ? 1 : 1.02 + ((frameIndex + 1) % 3) * 0.015;
+
+  const visibleFaces = D20_FACES.map((face) => {
+    const vertices = face.indices.map((index) => rotatedVertices[index]);
+    const center = {
+      x: (vertices[0].x + vertices[1].x + vertices[2].x) / 3,
+      y: (vertices[0].y + vertices[1].y + vertices[2].y) / 3,
+      z: (vertices[0].z + vertices[1].z + vertices[2].z) / 3
+    };
+    const normal = normalizeVector(crossVector(
+      subtractVector(vertices[1], vertices[0]),
+      subtractVector(vertices[2], vertices[0])
+    ));
+    const facing = dotVector(normal, { x: 0, y: 0, z: 1 });
+    if (facing <= 0.08) return null;
+
+    const projected = face.indices.map((index) => projectedVertices[index]);
+    const labelPosition = projectD20Vertex(center);
+    const projectedArea = getTriangleArea2D(projected);
+    const highlighted = face.label === clampOpeningRoll(value);
+    const isDoubleDigitLabel = face.label >= 10;
+    const lightness = Math.round(20 + (facing * 28) + (highlighted ? 10 : 0));
+    const strokeLightness = Math.round(58 + (facing * 20));
+    const baseLabelSize = highlighted ? 18 + (facing * 8) : 13 + (facing * 6);
+    const labelSize = baseLabelSize * (isDoubleDigitLabel ? 0.78 : 1);
+    const labelOpacity = highlighted ? 1 : Math.max(0.62, Math.min(0.9, 0.3 + (facing * 0.95)));
+    const axisProjectionDistance = 0.26;
+    const projectedAxisX = projectD20Vertex({
+      x: center.x + (rotateVector(face.axisX, rotation).x * axisProjectionDistance),
+      y: center.y + (rotateVector(face.axisX, rotation).y * axisProjectionDistance),
+      z: center.z + (rotateVector(face.axisX, rotation).z * axisProjectionDistance)
+    });
+    const projectedAxisY = projectD20Vertex({
+      x: center.x + (rotateVector(face.axisY, rotation).x * axisProjectionDistance),
+      y: center.y + (rotateVector(face.axisY, rotation).y * axisProjectionDistance),
+      z: center.z + (rotateVector(face.axisY, rotation).z * axisProjectionDistance)
+    });
+    const screenAxisX = {
+      x: projectedAxisX.x - labelPosition.x,
+      y: projectedAxisX.y - labelPosition.y
+    };
+    const screenAxisY = {
+      x: projectedAxisY.x - labelPosition.x,
+      y: projectedAxisY.y - labelPosition.y
+    };
+    const axisXLength = Math.max(1, Math.hypot(screenAxisX.x, screenAxisX.y));
+    const axisYLength = Math.max(1, Math.hypot(screenAxisY.x, screenAxisY.y));
+    const labelAngle = Math.atan2(screenAxisX.y, screenAxisX.x) * (180 / Math.PI);
+    const labelScaleX = Math.max(0.86, Math.min(axisXLength / (isDoubleDigitLabel ? 11.2 : 9.8), 1.4));
+    const labelScaleY = Math.max(0.72, Math.min(axisYLength / 12.5, 1.12));
+    const estimatedLabelWidth = labelSize * labelScaleX * (isDoubleDigitLabel ? 1.1 : 0.66);
+    const estimatedLabelHeight = labelSize * labelScaleY * 0.92;
+    const availableLabelWidth = axisXLength * 1.9;
+    const availableLabelHeight = axisYLength * 1.8;
+    const minimumFaceToLabelRatio = 1.5;
+    const labelFitsFace = (estimatedLabelWidth * minimumFaceToLabelRatio) <= availableLabelWidth &&
+      (estimatedLabelHeight * minimumFaceToLabelRatio) <= availableLabelHeight &&
+      ((estimatedLabelWidth * estimatedLabelHeight) * (minimumFaceToLabelRatio ** 2)) <= (projectedArea * 0.68);
+
+    return {
+      label: face.label,
+      points: projected.map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`).join(' '),
+      depth: center.z,
+      labelSize,
+      labelLetterSpacing: isDoubleDigitLabel ? '0.01em' : '0.04em',
+      labelOpacity,
+      labelX: labelPosition.x,
+      labelY: labelPosition.y,
+      labelAngle,
+      labelScaleX,
+      labelScaleY,
+      fill: `hsla(${baseHue}, ${highlighted ? 84 : 68}%, ${lightness}%, ${highlighted ? 0.97 : 0.9})`,
+      stroke: `hsla(${baseHue}, ${highlighted ? 60 : 48}%, ${highlighted ? Math.min(80, strokeLightness + 6) : strokeLightness}%, ${highlighted ? 0.42 : 0.28})`,
+      textFill: highlighted ? '#f8fafc' : `hsla(210, 40%, ${Math.round(84 + (facing * 8))}%, 0.95)`,
+      textGlow: highlighted ? 0.68 : 0.2,
+      facing,
+      projectedArea,
+      labelFitsFace,
+      highlighted
+    };
+  }).filter(Boolean);
+
+  const labeledFaces = new Set(
+    visibleFaces
+      .filter((face) => face.facing > 0.12 && face.projectedArea > 190 && face.labelFitsFace)
+      .map((face) => face.label)
+  );
+
+  visibleFaces.sort((a, b) => a.depth - b.depth);
+
+  return (
+    <div
+      className="absolute inset-0"
+      style={{ transform: `translateY(${hoverOffset}px) scale(${dieScale})` }}
+    >
+      <div className={`absolute inset-[14%] rounded-full blur-3xl ${settled ? (playerStarts ? 'bg-cyan-300/18' : 'bg-amber-300/16') : 'bg-cyan-300/14'}`} />
+      <svg
+        viewBox="0 0 240 240"
+        className="absolute inset-0 h-full w-full overflow-visible drop-shadow-[0_34px_58px_rgba(2,6,23,0.74)]"
+      >
+        <defs>
+          <radialGradient id="d20Specular" cx="38%" cy="32%" r="64%">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.34)" />
+            <stop offset="52%" stopColor="rgba(255,255,255,0.08)" />
+            <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
+        </defs>
+        {visibleFaces.map((face) => (
+          <g key={face.label}>
+            <polygon
+              points={face.points}
+              fill={face.fill}
+              stroke={face.stroke}
+              strokeWidth={face.highlighted ? 1.35 : 1.1}
+              strokeLinejoin="round"
+            />
+            <polygon
+              points={face.points}
+              fill="url(#d20Specular)"
+              opacity={face.highlighted ? 0.28 : 0.2}
+            />
+            {labeledFaces.has(face.label) && (
+              <g
+                opacity={face.labelOpacity}
+                transform={`translate(${face.labelX} ${face.labelY}) rotate(${face.labelAngle}) scale(${face.labelScaleX} ${face.labelScaleY})`}
+              >
+                <text
+                  x="0"
+                  y="0"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  alignmentBaseline="middle"
+                  fontSize={face.labelSize}
+                  fontWeight="900"
+                  fill={face.textFill}
+                  style={{ letterSpacing: face.labelLetterSpacing, filter: `drop-shadow(0 0 10px rgba(255,255,255,${face.textGlow}))` }}
+                >
+                  {face.label}
+                </text>
+              </g>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+};
 const APP_VERSION = 'v0.3.1';
 const ADVENTURE_ROUTE = ['shark', 'archivist', 'eel', 'siren', 'undertow', 'cartographer', 'piranha', 'hermit', 'tortoise', 'leviathan'];
 const ADVENTURE_MAP_LAYOUT = [
@@ -982,8 +1438,8 @@ const canOptimisticallyApplyGuestAction = (state, action) => {
     case 'TOGGLE_PENDING_SELECT':
     case 'UPDATE_TELLING_TIME':
       return true;
-    case 'SUBMIT_PENDING_ACTION':
-      return ['LAND_TYPE_CHOICE', 'BRAINSTORM', 'DISCARD', 'TELLING_TIME', 'HALIMAR_DEPTHS', 'MULLIGAN_BOTTOM', 'DISCARD_CLEANUP', 'MYSTIC_SANCTUARY'].includes(state?.pendingAction?.type);
+      case 'SUBMIT_PENDING_ACTION':
+        return ['LAND_TYPE_CHOICE', 'BRAINSTORM', 'DISCARD', 'TELLING_TIME', 'HALIMAR_DEPTHS', 'MULLIGAN_BOTTOM', 'DISCARD_CLEANUP', 'MYSTIC_SANCTUARY', 'METAMORPHOSE_DEPLOY', 'METAMORPHOSE_CONTROL_MAGIC'].includes(state?.pendingAction?.type);
     default:
       return false;
   }
@@ -1321,7 +1777,7 @@ const Preloader = ({ onComplete }) => {
 };
 
 // --- RESPONSIVE CARD COMPONENT ---
-const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false, official = false, draggable = false, onDragStart, onDragOver, onDrop, castable = false, targetable = false, stackTargeted = false, activatable = false, subtleHighlight = false, disableHoverLift = false }) => {
+const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false, official = false, draggable = false, onDragStart, onDragOver, onDrop, castable = false, targetable = false, stackTargeted = false, activatable = false, subtleHighlight = false, disableHoverLift = false, desktopHoverZoom = false }) => {
   const holdTimer = useRef(null);
   const [isPressing, setIsPressing] = useState(false);
   const printedLandType = card.type?.includes('Island') ? 'Island' : null;
@@ -1355,7 +1811,8 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
   };
 
   let dims = "w-[64px] h-[90px] sm:w-[80px] sm:h-[112px]"; 
-  if (zone === 'hand') dims = "w-[72px] h-[100px] sm:w-[90px] sm:h-[126px]";
+  if (zone === 'hand') dims = "w-[72px] h-[100px] sm:w-[92px] sm:h-[129px] lg:w-[112px] lg:h-[157px] xl:w-[120px] xl:h-[168px]";
+  if (zone === 'dialog') dims = "w-[84px] h-[118px] sm:w-[108px] sm:h-[151px]";
   if (zone === 'explorer') dims = "w-full h-auto aspect-[5/7]";
   if (zone === 'stack') dims = "w-[86px] h-[120px] sm:w-[116px] sm:h-[162px]";
 
@@ -1368,7 +1825,7 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
       ringClass = 'ring-2 ring-red-500 ring-offset-2 ring-offset-slate-950 shadow-[0_0_14px_rgba(239,68,68,0.55)]';
   } else if (castable && zone === 'hand') {
       ringClass = 'ring-2 ring-blue-400 ring-offset-1 ring-offset-slate-950 shadow-[0_0_15px_rgba(96,165,250,0.6)]';
-      interactionClass = disableHoverLift ? 'cursor-pointer' : 'cursor-pointer hover:-translate-y-4';
+      interactionClass = disableHoverLift ? 'cursor-pointer' : 'cursor-pointer hover:-translate-y-4 lg:hover:-translate-y-5';
   } else if (activatable && zone === 'board') {
       ringClass = 'ring-2 ring-cyan-300/70 ring-offset-1 ring-offset-slate-950 shadow-[0_0_8px_rgba(34,211,238,0.22)] cursor-pointer';
       interactionClass = 'cursor-pointer hover:scale-[1.01]';
@@ -1379,12 +1836,18 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
   } else if (subtleHighlight) {
       ringClass = 'ring-1 ring-amber-300/75 ring-offset-1 ring-offset-slate-950 shadow-[0_0_10px_rgba(251,191,36,0.18)]';
   } else {
-      if (zone === 'hand' || zone === 'explorer') interactionClass = disableHoverLift ? 'cursor-pointer' : 'cursor-pointer hover:-translate-y-4';
+      if (zone === 'hand' || zone === 'explorer' || zone === 'dialog') interactionClass = disableHoverLift ? 'cursor-pointer' : 'cursor-pointer hover:-translate-y-4 lg:hover:-translate-y-5';
       if (zone === 'board' && card.name === 'DandÃ¢n' && !card.tapped && !card.summoningSickness) interactionClass = 'cursor-pointer hover:ring-2 hover:ring-slate-400';
   }
   if (zone === 'board' && card.isLand) {
     interactionClass = `${interactionClass} cursor-pointer hover:ring-1 hover:ring-cyan-200/45 hover:ring-offset-1 hover:ring-offset-slate-950 hover:shadow-[0_0_6px_rgba(125,211,252,0.12)]`.trim();
   }
+  const contentZoomClass = desktopHoverZoom && zone === 'hand' && !disableHoverLift
+    ? 'origin-bottom transition-transform duration-200 ease-out lg:group-hover/card:scale-[1.45] lg:group-hover/card:drop-shadow-[0_28px_56px_rgba(2,6,23,0.58)]'
+    : '';
+  const zoneStyle = zone === 'dialog'
+    ? { width: 'clamp(84px, 12vw, 188px)', height: 'calc(clamp(84px, 12vw, 188px) * 1.4)' }
+    : null;
 
   const CardBack = () => (
     <div className="absolute inset-0 bg-[#2b1b11] border-[3px] border-slate-900 flex items-center justify-center p-1 rounded-md">
@@ -1410,52 +1873,54 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
       onDragStart={(e) => { cancelHold(); onDragStart && onDragStart(e); }}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      className={`relative rounded-md transition-all duration-200 ease-out shadow-lg shrink-0 ${dims} ${ringClass} ${interactionClass}`}
-      style={{ transform: getBaseTransform(), transformStyle: 'preserve-3d', ...style }}
+      className={`group/card relative overflow-visible rounded-md transition-all duration-200 ease-out shadow-lg shrink-0 ${dims} ${ringClass} ${interactionClass}`}
+      style={{ transform: getBaseTransform(), transformStyle: 'preserve-3d', ...(zoneStyle || {}), ...style }}
     >
-      {zone === 'board' && card.isLand && isPressing && (
-        <div className="absolute inset-[-2px] rounded-[8px] border border-cyan-100/45 bg-cyan-200/5 shadow-[0_0_8px_rgba(34,211,238,0.14)] pointer-events-none z-50" />
-      )}
-      <div className="absolute inset-0 bg-slate-900" />
-      {hidden ? <CardBack /> : official ? (
-        <img src={card.fullImage} alt={card.name} loading="eager" decoding="sync" className="absolute inset-0 w-full h-full object-cover rounded-md pointer-events-none" />
-      ) : (
-        <div className="absolute inset-0 border-[3px] border-slate-900 rounded-md flex flex-col bg-slate-500 p-[2px]">
-          <div className={`absolute inset-0 opacity-90 ${card.isLand ? 'bg-sky-200' : 'bg-blue-600'}`}></div>
-          <div className="relative z-10 flex flex-col h-full gap-0.5">
-            <div className="bg-slate-100/95 border border-slate-400 rounded-sm flex justify-between items-center px-1 shadow-sm h-3">
-              <span className="font-bold text-slate-900 text-[5px] truncate">{card.name}</span>
-              <span className="font-bold text-slate-800 text-[5px]">{card.manaCost}</span>
+      <div className={`absolute inset-0 ${contentZoomClass}`}>
+        {zone === 'board' && card.isLand && isPressing && (
+          <div className="absolute inset-[-2px] rounded-[8px] border border-cyan-100/45 bg-cyan-200/5 shadow-[0_0_8px_rgba(34,211,238,0.14)] pointer-events-none z-50" />
+        )}
+        <div className="absolute inset-0 bg-slate-900" />
+        {hidden ? <CardBack /> : official ? (
+          <img src={card.fullImage} alt={card.name} loading="eager" decoding="sync" className="absolute inset-0 w-full h-full object-cover rounded-md pointer-events-none" />
+        ) : (
+          <div className="absolute inset-0 border-[3px] border-slate-900 rounded-md flex flex-col bg-slate-500 p-[2px]">
+            <div className={`absolute inset-0 opacity-90 ${card.isLand ? 'bg-sky-200' : 'bg-blue-600'}`}></div>
+            <div className="relative z-10 flex flex-col h-full gap-0.5">
+              <div className="bg-slate-100/95 border border-slate-400 rounded-sm flex justify-between items-center px-1 shadow-sm h-3">
+                <span className="font-bold text-slate-900 text-[5px] truncate">{card.name}</span>
+                <span className="font-bold text-slate-800 text-[5px]">{card.manaCost}</span>
+              </div>
+              <div className="flex-1 bg-slate-800/80 border border-slate-500 rounded-sm overflow-hidden flex items-center justify-center relative shadow-inner">
+                 <img src={card.image} alt="" loading="eager" decoding="sync" className="absolute inset-0 w-full h-full object-cover pointer-events-none" onError={(e) => { e.target.style.display = 'none'; }} />
+              </div>
+              <div className="bg-slate-100/95 border border-slate-400 rounded-sm px-1 shadow-sm h-2.5 flex items-center">
+                <span className="font-bold text-slate-900 text-[4px] truncate">{card.type}</span>
+              </div>
             </div>
-            <div className="flex-1 bg-slate-800/80 border border-slate-500 rounded-sm overflow-hidden flex items-center justify-center relative shadow-inner">
-               <img src={card.image} alt="" loading="eager" decoding="sync" className="absolute inset-0 w-full h-full object-cover pointer-events-none" onError={(e) => { e.target.style.display = 'none'; }} />
-            </div>
-            <div className="bg-slate-100/95 border border-slate-400 rounded-sm px-1 shadow-sm h-2.5 flex items-center">
-              <span className="font-bold text-slate-900 text-[4px] truncate">{card.type}</span>
-            </div>
+            {card.stats && (
+              <div className="absolute bottom-[-1px] right-0 bg-slate-100 border border-slate-400 rounded-tl rounded-br-sm shadow-md px-1 z-20">
+                <span className="font-bold text-slate-900 text-[6px] leading-none">{card.stats}</span>
+              </div>
+            )}
           </div>
-          {card.stats && (
-            <div className="absolute bottom-[-1px] right-0 bg-slate-100 border border-slate-400 rounded-tl rounded-br-sm shadow-md px-1 z-20">
-              <span className="font-bold text-slate-900 text-[6px] leading-none">{card.stats}</span>
-            </div>
-          )}
-        </div>
-      )}
-      {card.tapped && zone === 'board' && (
-        <div className={`absolute inset-0 rounded-md z-30 pointer-events-none flex items-center justify-center ${card.isLand ? 'bg-sky-950/20 border border-sky-300/15 shadow-[inset_0_0_10px_rgba(125,211,252,0.12)]' : 'bg-black/50'}`}>
-          <div className={`w-4 h-4 rounded-full border-2 rotate-90 ${card.isLand ? 'border-sky-100 opacity-80' : 'border-slate-300 opacity-50'}`} style={{ borderTopColor: 'transparent', borderRightColor: 'transparent' }}/>
-        </div>
-      )}
-      {changedLandType && (
-        <div className={`absolute inset-0 rounded-md z-20 pointer-events-none mix-blend-multiply flex items-center justify-center ${changedLandType === 'Island' ? 'bg-sky-700/45' : 'bg-purple-900/60'}`}>
-          <span className={`font-bold rotate-45 opacity-65 text-xs ${changedLandType === 'Island' ? 'text-sky-100' : 'text-purple-300'}`}>{changedLandType.toUpperCase()}</span>
-        </div>
-      )}
-      {card.summoningSickness && !card.isLand && zone === 'board' && (
-         <div className="absolute top-1 right-1 bg-slate-900/85 rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shadow z-40 text-[8px] font-black tracking-tight text-slate-100" title="Summoning Sickness">
-            Zz
-         </div>
-      )}
+        )}
+        {card.tapped && zone === 'board' && (
+          <div className={`absolute inset-0 rounded-md z-30 pointer-events-none flex items-center justify-center ${card.isLand ? 'bg-sky-950/20 border border-sky-300/15 shadow-[inset_0_0_10px_rgba(125,211,252,0.12)]' : 'bg-black/50'}`}>
+            <div className={`w-4 h-4 rounded-full border-2 rotate-90 ${card.isLand ? 'border-sky-100 opacity-80' : 'border-slate-300 opacity-50'}`} style={{ borderTopColor: 'transparent', borderRightColor: 'transparent' }}/>
+          </div>
+        )}
+        {changedLandType && (
+          <div className={`absolute inset-0 rounded-md z-20 pointer-events-none mix-blend-multiply flex items-center justify-center ${changedLandType === 'Island' ? 'bg-sky-700/45' : 'bg-purple-900/60'}`}>
+            <span className={`font-bold rotate-45 opacity-65 text-xs ${changedLandType === 'Island' ? 'text-sky-100' : 'text-purple-300'}`}>{changedLandType.toUpperCase()}</span>
+          </div>
+        )}
+        {card.summoningSickness && !card.isLand && zone === 'board' && (
+           <div className="absolute top-1 right-1 bg-slate-900/85 rounded-full min-w-[18px] h-[18px] px-1 flex items-center justify-center shadow z-40 text-[8px] font-black tracking-tight text-slate-100" title="Summoning Sickness">
+              Zz
+           </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -3191,6 +3656,7 @@ export default function App() {
   const [playerAvatarError, setPlayerAvatarError] = useState('');
   const [menuAssetsReady, setMenuAssetsReady] = useState(true);
   const [hasSavedGame, setHasSavedGame] = useState(() => Boolean(loadCurrentGameSnapshot()));
+  const [openingRollState, setOpeningRollState] = useState(null);
   const [draggedIdx, setDraggedIdx] = useState(null);
   const [zoomedCard, setZoomedCard] = useState(null); 
   const [viewingZone, setViewingZone] = useState(null); 
@@ -3240,6 +3706,7 @@ export default function App() {
   const peerDisconnectTimerRef = useRef(null);
   const peerStartLaunchRef = useRef(false);
   const peerClockRef = useRef(null);
+  const openingRollTimersRef = useRef([]);
   const playerAvatarInputRef = useRef(null);
   const onlineLobbyPeerRef = useRef(null);
   const onlineLobbyConnectionRef = useRef(null);
@@ -3326,13 +3793,17 @@ export default function App() {
     state.phase === 'declare_attackers' &&
     state.priority === 'player' &&
     canPlayerInitiateCombat;
+  const playerKnownTopCards = state.knowledge?.player?.knownTop || [];
+  const visibleKnownTopCard = playerKnownTopCards[0] || null;
+  const visibleKnownTopQueueCount = Math.max(0, playerKnownTopCards.length - 1);
+  const playerHasFreeDandanMulligan = qualifiesForDandanFreeMulligan(state.player.hand);
   const localPendingAction = state.pendingAction && (state.pendingAction.player || 'player') === 'player'
     ? state.pendingAction
     : null;
   const localPendingTargetSelection = state.pendingTargetSelection && (state.pendingTargetSelection.player || 'player') === 'player'
     ? state.pendingTargetSelection
     : null;
-  const peekablePendingActionTypes = ['DISCARD_CLEANUP', 'ACTIVATE_LAND', 'HAND_LAND_ACTION', 'MYSTIC_SANCTUARY', 'LAND_TYPE_CHOICE', 'BRAINSTORM', 'DISCARD', 'PREDICT', 'TELLING_TIME', 'HALIMAR_DEPTHS'];
+  const peekablePendingActionTypes = ['DISCARD_CLEANUP', 'ACTIVATE_LAND', 'HAND_LAND_ACTION', 'MYSTIC_SANCTUARY', 'LAND_TYPE_CHOICE', 'BRAINSTORM', 'DISCARD', 'PREDICT', 'TELLING_TIME', 'HALIMAR_DEPTHS', 'METAMORPHOSE_DEPLOY', 'METAMORPHOSE_CONTROL_MAGIC'];
   const isPeekableDialogVisible = Boolean(
     dandanCastConfirm ||
     dandanAttackBlockedDialog ||
@@ -3351,6 +3822,12 @@ export default function App() {
     : currentOpponentCharacter
     ? getCharacterPortrait(currentOpponentCharacter.id, state.difficulty || selectedDifficulty)
     : (DIFFICULTY_ART[state.difficulty || selectedDifficulty] || DIFFICULTY_ART.medium);
+  const renderWithOpeningRollOverlay = (content) => (
+    <>
+      {content}
+      {openingRollState && <OpeningRollOverlay {...openingRollState} />}
+    </>
+  );
   const isAdventureComplete = adventureWinsCount >= ADVENTURE_ROUTE.length;
   const nextAdventureIndex = Math.min(adventureWinsCount, ADVENTURE_ROUTE.length - 1);
   const nextAdventureCharacter = getAiCharacter(ADVENTURE_ROUTE[nextAdventureIndex]) || AI_CHARACTERS[0];
@@ -3363,6 +3840,9 @@ export default function App() {
   useEffect(() => {
     peerClockRef.current = peerClock;
   }, [peerClock]);
+  useEffect(() => () => {
+    clearOpeningRollTimers();
+  }, []);
   useEffect(() => { AudioEngine.muted = muted; }, [muted]);
   useEffect(() => { saveRivalProgress(adventureWinsCount); }, [adventureWinsCount]);
   useEffect(() => {
@@ -3570,6 +4050,75 @@ export default function App() {
     }));
   };
 
+  const clearOpeningRollTimers = () => {
+    if (openingRollTimersRef.current.length > 0) {
+      openingRollTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      openingRollTimersRef.current = [];
+    }
+  };
+
+  const dismissOpeningRoll = () => {
+    clearOpeningRollTimers();
+    setOpeningRollState(null);
+  };
+
+  const beginOpeningRollPresentation = ({
+    roll = rollOpeningD20(),
+    playerLabel = 'You',
+    opponentLabel = 'Opponent',
+    playerAvatarSrc = selectedPlayerAvatarSrc,
+    opponentAvatarSrc = CARDS.DANDAN.image,
+    onComplete
+  }) => {
+    const finalRoll = clampOpeningRoll(roll);
+    const startingPlayer = getOpeningSeatFromRoll(finalRoll);
+    const sequence = buildOpeningRollSequence(finalRoll);
+
+    clearOpeningRollTimers();
+    AudioEngine.init();
+    AudioEngine.playOpeningRoll();
+    setOpeningRollState({
+      value: sequence[0],
+      frameIndex: 0,
+      phase: 'rolling',
+      startingPlayer,
+      playerLabel,
+      opponentLabel,
+      playerAvatarSrc,
+      opponentAvatarSrc
+    });
+
+    let elapsed = 0;
+    sequence.forEach((face, index) => {
+      elapsed += OPENING_ROLL_FRAME_DELAYS_MS[index] || OPENING_ROLL_FRAME_DELAYS_MS[OPENING_ROLL_FRAME_DELAYS_MS.length - 1];
+      openingRollTimersRef.current.push(window.setTimeout(() => {
+        setOpeningRollState((current) => (
+          current
+            ? {
+                ...current,
+                value: face,
+                frameIndex: index,
+                phase: index === sequence.length - 1 ? 'settled' : 'rolling'
+              }
+            : current
+        ));
+        if (index === sequence.length - 1) {
+          AudioEngine.playOpeningRollResult(startingPlayer === 'player');
+        } else {
+          AudioEngine.playOpeningRollTick(index / Math.max(1, sequence.length - 2));
+        }
+      }, elapsed));
+    });
+
+    elapsed += OPENING_ROLL_SETTLE_DELAY_MS;
+    openingRollTimersRef.current.push(window.setTimeout(() => {
+      dismissOpeningRoll();
+      if (typeof onComplete === 'function') {
+        onComplete({ roll: finalRoll, startingPlayer });
+      }
+    }, elapsed));
+  };
+
   const buildPeerStartNote = (current) => {
     if (current.status === 'reconnecting') {
       return 'Connection dropped. Waiting for the room to recover before you can start.';
@@ -3586,47 +4135,83 @@ export default function App() {
     return 'Both players need to press Start Game.';
   };
 
+  const beginPeerOpeningRoll = ({
+    roll = rollOpeningD20(),
+    difficulty = latestStateRef.current?.difficulty || selectedDifficulty,
+    opponentName = peerOpponentName,
+    opponentAvatarSrc = peerOpponentAvatarSrc,
+    syncAfterStart = peerUi.role === 'host'
+  } = {}) => {
+    beginOpeningRollPresentation({
+      roll,
+      playerLabel: peerPlayerName,
+      opponentLabel: opponentName,
+      playerAvatarSrc: peerPlayerAvatarSrc,
+      opponentAvatarSrc,
+      onComplete: ({ roll: finalRoll, startingPlayer }) => {
+        const syncedState = latestStateRef.current;
+        if (syncedState?.gameMode === 'peer' && syncedState?.started && !syncedState?.winner) {
+          return;
+        }
+        rawDispatch({
+          type: 'START_GAME',
+          mode: 'peer',
+          difficulty,
+          startingPlayer,
+          openingRoll: finalRoll
+        });
+        if (syncAfterStart && peerUi.role === 'host') {
+          window.setTimeout(() => {
+            pushPeerStateSync(latestStateRef.current);
+          }, 60);
+          window.setTimeout(() => {
+            pushPeerStateSync(latestStateRef.current);
+          }, 220);
+        }
+      }
+    });
+  };
+
   function startPeerGameFromRoom() {
     const currentState = latestStateRef.current;
     const nextDifficulty = currentState?.difficulty || selectedDifficulty;
+    const openingRoll = rollOpeningD20();
     updatePeerUi((current) => ({
       ...current,
       localReady: false,
       remoteReady: false,
       error: '',
-      note: 'Both players are ready. Starting the game...'
+      note: 'Both players are ready. Rolling the D20 for the opening turn...'
     }));
-    rawDispatch({
-      type: 'START_GAME',
-      mode: 'peer',
-      difficulty: nextDifficulty
-    });
     if (peerUi.role === 'host') {
-      window.setTimeout(() => {
-        const connection = peerConnectionRef.current;
-        if (connection?.open) {
-          try {
-            connection.send({
-              type: 'peer-start-game',
-              protocol: PEER_PROTOCOL_VERSION,
-              difficulty: nextDifficulty,
-              playerName: peerUi.playerDisplayName || '',
-              playerAvatarSrc: peerUi.playerAvatarSrc || selectedPlayerAvatarSrc
-            });
-          } catch (_error) {}
-        }
-        pushPeerStateSync(latestStateRef.current);
-      }, 60);
-      window.setTimeout(() => {
-        pushPeerStateSync(latestStateRef.current);
-      }, 220);
+      const connection = peerConnectionRef.current;
+      if (connection?.open) {
+        try {
+          connection.send({
+            type: 'peer-start-game',
+            protocol: PEER_PROTOCOL_VERSION,
+            difficulty: nextDifficulty,
+            openingRoll,
+            startingPlayer: getOpeningSeatFromRoll(openingRoll),
+            playerName: peerUi.playerDisplayName || '',
+            playerAvatarSrc: peerUi.playerAvatarSrc || selectedPlayerAvatarSrc
+          });
+        } catch (_error) {}
+      }
     }
+    beginPeerOpeningRoll({
+      roll: openingRoll,
+      opponentLabel: peerOpponentName,
+      opponentAvatarSrc: peerOpponentAvatarSrc,
+      difficulty: nextDifficulty,
+      syncAfterStart: true
+    });
   }
 
   const handlePeerStartGame = () => {
     AudioEngine.init();
     const connection = peerConnectionRef.current;
-    if (!connection?.open || peerUi.status !== 'connected' || peerUi.localReady) return;
+    if (!connection?.open || peerUi.status !== 'connected' || peerUi.localReady || openingRollState) return;
 
     updatePeerUi((current) => {
       return {
@@ -3678,6 +4263,7 @@ export default function App() {
   const disconnectPeerSession = ({ notifyRemote = false, resetGame = false, keepDialog = false, note = '', preserveJoinFields = true } = {}) => {
     peerSessionRef.current.manualClose = true;
     clearPeerTimers();
+    dismissOpeningRoll();
 
     const connection = peerConnectionRef.current;
     if (notifyRemote && connection?.open) {
@@ -4352,16 +4938,16 @@ export default function App() {
           localReady: false,
           remoteReady: false,
           error: '',
-          note: 'Both players are ready. Starting the game...'
+          note: 'Both players are ready. Rolling the D20 for the opening turn...'
         }));
         const currentState = latestStateRef.current;
-        if (currentState?.gameMode !== 'peer' || !currentState?.started || currentState?.winner) {
-          rawDispatch({
-            type: 'START_GAME',
-            mode: 'peer',
-            difficulty: message.difficulty || currentState?.difficulty || selectedDifficulty
-          });
-        }
+        beginPeerOpeningRoll({
+          roll: message.openingRoll || message.roll || 1,
+          opponentLabel: sanitizeOnlinePlayerName(message.playerName || peerOpponentName || 'Opponent'),
+          opponentAvatarSrc: sanitizePeerAvatarSrc(message.playerAvatarSrc || peerOpponentAvatarSrc || ''),
+          difficulty: message.difficulty || currentState?.difficulty || selectedDifficulty,
+          syncAfterStart: false
+        });
         return;
       }
       if (message.type === 'session-ended') {
@@ -4890,6 +5476,7 @@ export default function App() {
   }, [state.priority, state.actionCount, state.stackResolving, state.winner, state.turn, state.phase, state.pendingAction, isAiMirror, difficultySpeed.think, difficultySpeed.pass, isPeerMatch]);
 
   const startMatch = (mode, aiCharacterId, playerAiCharacterId = null, difficultyOverride = selectedDifficulty) => {
+    if (openingRollState) return;
     if (mode !== 'peer' && isPeerSessionActive) {
       disconnectPeerSession({ notifyRemote: peerUi.role === 'host', resetGame: false, keepDialog: false, note: 'Friend match closed.' });
     }
@@ -4898,12 +5485,40 @@ export default function App() {
     }
     setDandanCastConfirm(null);
     setDandanAttackBlockedDialog(null);
-    dispatch({
-      type: 'START_GAME',
-      mode,
-      difficulty: difficultyOverride,
-      aiCharacterId,
-      playerAiCharacterId
+    const playerLabel = mode === 'ai_vs_ai'
+      ? (getAiCharacter(playerAiCharacterId || DEFAULT_AI_CHARACTER_ID)?.name || 'AI South')
+      : 'You';
+    const rollPlayerAvatarSrc = mode === 'ai_vs_ai'
+      ? getCharacterPortrait(playerAiCharacterId || DEFAULT_AI_CHARACTER_ID, difficultyOverride)
+      : selectedPlayerAvatarSrc;
+    const rivalCharacter = aiCharacterId ? getAiCharacter(aiCharacterId) : null;
+    const opponentLabel = mode === 'peer'
+      ? peerOpponentName
+      : mode === 'ai_vs_ai'
+        ? (rivalCharacter?.name || 'AI North')
+        : rivalCharacter?.name || 'Opponent';
+    const rollOpponentAvatarSrc = mode === 'peer'
+      ? peerOpponentAvatarSrc
+      : rivalCharacter
+        ? getCharacterPortrait(rivalCharacter.id, difficultyOverride)
+        : (DIFFICULTY_ART[difficultyOverride] || DIFFICULTY_ART.medium);
+
+    beginOpeningRollPresentation({
+      playerLabel,
+      opponentLabel,
+      playerAvatarSrc: rollPlayerAvatarSrc,
+      opponentAvatarSrc: rollOpponentAvatarSrc,
+      onComplete: ({ roll, startingPlayer }) => {
+        dispatch({
+          type: 'START_GAME',
+          mode,
+          difficulty: difficultyOverride,
+          aiCharacterId,
+          playerAiCharacterId,
+          startingPlayer,
+          openingRoll: roll
+        });
+      }
     });
   };
 
@@ -4929,6 +5544,7 @@ export default function App() {
   };
 
   const handleAdventureReturnToMenu = () => {
+    dismissOpeningRoll();
     if (state.winner === 'player') {
       setAdventureWinsCount((count) => Math.min(count + 1, ADVENTURE_ROUTE.length));
     }
@@ -4940,6 +5556,7 @@ export default function App() {
   };
 
   const returnToMenu = () => {
+    dismissOpeningRoll();
     if (isPeerSessionActive) {
       disconnectPeerSession({ notifyRemote: peerUi.role === 'host', resetGame: false, keepDialog: false, note: 'Friend match closed.' });
     }
@@ -4955,6 +5572,7 @@ export default function App() {
   };
 
   const handleContinueSavedGame = () => {
+    dismissOpeningRoll();
     const savedGame = loadCurrentGameSnapshot();
     if (!savedGame) {
       clearCurrentGameSnapshot();
@@ -5254,7 +5872,7 @@ export default function App() {
   }
 
   if (!state.started && isPeerSessionActive && ['connected', 'reconnecting'].includes(peerUi.status)) {
-    return (
+    return renderWithOpeningRollOverlay(
       <PeerRoomLobbyScreen
         playerName={peerPlayerName}
         opponentName={peerOpponentName}
@@ -5274,7 +5892,7 @@ export default function App() {
   }
 
   if (!state.started) {
-    return (
+    return renderWithOpeningRollOverlay(
       <LandingScreen
         landingBackground={landingBackground}
         menuScreen={menuScreen}
@@ -5718,7 +6336,7 @@ export default function App() {
           : null;
 
   if (state.winner) {
-    return (
+    return renderWithOpeningRollOverlay(
       <div className="h-dvh bg-slate-950 text-slate-100 flex items-center justify-center p-6">
         <div className="text-center space-y-6 max-w-sm w-full bg-slate-900/80 p-8 rounded-2xl border border-slate-700 shadow-2xl">
           <h1 className="font-arena-display text-4xl font-black tracking-[0.12em] uppercase text-transparent bg-clip-text bg-gradient-to-b from-slate-100 to-slate-400">
@@ -5758,7 +6376,7 @@ export default function App() {
             </>
           ) : (
             <>
-              <button onClick={() => dispatch({ type: 'START_GAME', mode: state.gameMode, difficulty: state.difficulty, aiCharacterId: state.aiCharacterId, playerAiCharacterId: state.playerAiCharacterId })} className="w-full py-3 bg-[#38bdf8] hover:bg-[#22c7ff] text-slate-950 rounded-xl font-bold tracking-widest uppercase border border-sky-200/70 shadow-[0_0_24px_rgba(56,189,248,0.28)] transition-colors">Play Again</button>
+              <button onClick={() => startMatch(state.gameMode, state.aiCharacterId, state.playerAiCharacterId, state.difficulty)} className="w-full py-3 bg-[#38bdf8] hover:bg-[#22c7ff] text-slate-950 rounded-xl font-bold tracking-widest uppercase border border-sky-200/70 shadow-[0_0_24px_rgba(56,189,248,0.28)] transition-colors">Play Again</button>
               <button onClick={returnToMenu} className="w-full py-3 bg-slate-900/92 hover:bg-slate-800 text-slate-100 rounded-xl font-bold tracking-widest uppercase border border-slate-600 transition-colors">Back To Menu</button>
             </>
           )}
@@ -5885,19 +6503,22 @@ export default function App() {
       
       {/* STARTING MULLIGAN MODAL */}
       {state.phase === 'mulligan' && !localPendingAction && (
-         <div className="absolute inset-0 bg-black/90 z-[110] flex flex-col items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-300">
-             <h2 className="font-arena-display text-4xl font-black tracking-[0.12em] uppercase text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 mb-2 text-center w-full">Starting Hand</h2>
-             <p className="text-slate-400 mb-8 font-mono">Mulligans taken: {currentMulliganCount}</p>
-             
-             <div className="flex gap-2 sm:gap-4 justify-center mb-12 flex-wrap max-w-4xl">
-                {state.player.hand.map(c => <div key={c.id} className="animate-in slide-in-from-bottom-8"><Card card={c} official={useOfficialCards} onZoom={setZoomedCard} /></div>)}
-             </div>
+             <div className="absolute inset-0 bg-black/90 z-[110] flex flex-col items-center justify-center p-4 backdrop-blur-md animate-in fade-in duration-300">
+              <h2 className="font-arena-display text-4xl font-black tracking-[0.12em] uppercase text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-300 mb-2 text-center w-full">Starting Hand</h2>
+              <p className="text-slate-400 mb-8 font-mono">Mulligans taken: {currentMulliganCount}</p>
+              {playerHasFreeDandanMulligan && (
+                <p className="text-cyan-300 mb-6 font-mono text-center">This hand qualifies for a free Dandan mulligan.</p>
+              )}
+              
+              <div className="flex gap-2 sm:gap-3 lg:gap-4 justify-center mb-12 flex-wrap max-w-[min(96vw,112rem)]">
+                 {state.player.hand.map(c => <div key={c.id} className="animate-in slide-in-from-bottom-8"><Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} /></div>)}
+              </div>
   
               {state.priority === 'player' ? (
-                <div className="flex gap-6">
-                   <button onClick={() => dispatch({ type: 'KEEP_HAND', player: 'player' })} className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black tracking-widest uppercase rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-all hover:scale-105">Keep Hand</button>
-                  <button disabled={currentMulliganCount >= 7} onClick={() => dispatch({ type: 'MULLIGAN', player: 'player' })} className="px-8 py-4 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-slate-200 font-black tracking-widest uppercase rounded-xl shadow-lg border border-slate-700 transition-all hover:scale-105 disabled:hover:scale-100">Mulligan</button>
-                </div>
+                 <div className="flex gap-6">
+                    <button onClick={() => dispatch({ type: 'KEEP_HAND', player: 'player' })} className="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-black tracking-widest uppercase rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-all hover:scale-105">Keep Hand</button>
+                  <button disabled={currentMulliganCount >= 7 && !playerHasFreeDandanMulligan} onClick={() => dispatch({ type: 'MULLIGAN', player: 'player' })} className="px-8 py-4 bg-slate-800 hover:bg-slate-700 disabled:bg-slate-900 disabled:text-slate-600 text-slate-200 font-black tracking-widest uppercase rounded-xl shadow-lg border border-slate-700 transition-all hover:scale-105 disabled:hover:scale-100">Mulligan</button>
+                 </div>
               ) : (
                 <div className="rounded-2xl border border-slate-700 bg-slate-900/82 px-6 py-4 text-center text-slate-300">
                   Waiting for your friend to finish their mulligan choice...
@@ -5962,13 +6583,13 @@ export default function App() {
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
            backdropClassName="bg-black/90"
          >
-            <div className="bg-slate-900 p-8 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-2xl flex flex-col items-center text-center">
+             <div className="bg-slate-900 p-8 rounded-2xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center">
                <h3 className="font-arena-display text-2xl font-black text-blue-400 mb-2 tracking-[0.16em] uppercase">{localPendingAction.type === 'MULLIGAN_BOTTOM' ? 'Mulligan' : 'Cleanup Step'}</h3>
                <p className="text-slate-300 text-sm mb-8">Select <span className="text-white font-bold text-lg">{localPendingAction.count}</span> card(s) to discard or put on bottom.</p>
-               <div className="flex flex-wrap gap-3 justify-center mb-8">
+               <div className="flex flex-wrap gap-3 lg:gap-5 justify-center mb-8">
                   {state.player.hand.map(c => (
                      <div key={c.id} onClick={() => dispatch({ type: 'TOGGLE_PENDING_SELECT', cardId: c.id })} className={`cursor-pointer transition-all duration-200 ${localPendingAction.selected.includes(c.id) ? 'ring-4 ring-blue-500 rounded-md shadow-[0_10px_20px_rgba(37,99,235,0.5)]' : 'opacity-80 hover:opacity-100'}`}>
-                        <Card card={c} official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                        <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
                      </div>
                   ))}
                </div>
@@ -6035,17 +6656,66 @@ export default function App() {
            onPeekEnd={handleBattlefieldPeekEnd}
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
          >
-            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-4xl flex flex-col items-center text-center max-h-[90vh]">
+             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center max-h-[90vh]">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Mystic Sanctuary</h3>
                <p className="text-slate-300 text-sm mb-6">Select an Instant or Sorcery from your graveyard to put on top of your library. Or skip.</p>
-               <div className="flex flex-wrap gap-2 justify-center mb-6 overflow-y-auto custom-scrollbar p-2 w-full">
+               <div className="flex flex-wrap gap-3 lg:gap-5 justify-center mb-6 overflow-y-auto custom-scrollbar p-2 w-full">
                   {state.graveyard.filter(c => localPendingAction.validTargets.includes(c.id)).map(c => (
                      <div key={c.id} onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', selectedCardId: c.id })} className="cursor-pointer transition-all hover:opacity-100 opacity-90">
-                        <Card card={c} official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                        <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
                      </div>
                   ))}
                </div>
                <button onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', selectedCardId: null })} className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl w-full max-w-sm transition-colors">Skip</button>
+            </div>
+         </PeekableDialogOverlay>
+      )}
+
+      {localPendingAction && localPendingAction.type === 'METAMORPHOSE_DEPLOY' && (
+         <PeekableDialogOverlay
+           peekActive={isBattlefieldPeekActive}
+           onPeekStart={handleBattlefieldPeekStart}
+           onPeekEnd={handleBattlefieldPeekEnd}
+           overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
+         >
+            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center max-h-[90vh]">
+               <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Metamorphose</h3>
+               <p className="text-slate-300 text-sm mb-6">Choose a permanent card from your hand to put onto the battlefield. Or skip.</p>
+               <div className="flex flex-wrap gap-3 lg:gap-5 justify-center mb-6 overflow-y-auto custom-scrollbar p-2 w-full">
+                  {state.player.hand.filter(c => localPendingAction.validCards.includes(c.id)).map(c => (
+                     <div key={c.id} onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', selectedCardId: c.id })} className="cursor-pointer transition-all hover:opacity-100 opacity-90">
+                        <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                        {c.name === 'Control Magic' && (
+                          <div className="mt-2 text-[10px] font-bold tracking-widest text-cyan-300 text-center">
+                            CHOOSE TARGET NEXT
+                          </div>
+                        )}
+                     </div>
+                  ))}
+               </div>
+               <button onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', selectedCardId: null })} className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl w-full max-w-sm transition-colors">Skip</button>
+            </div>
+         </PeekableDialogOverlay>
+      )}
+
+      {localPendingAction && localPendingAction.type === 'METAMORPHOSE_CONTROL_MAGIC' && (
+         <PeekableDialogOverlay
+           peekActive={isBattlefieldPeekActive}
+           onPeekStart={handleBattlefieldPeekStart}
+           onPeekEnd={handleBattlefieldPeekEnd}
+           overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
+         >
+            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center max-h-[90vh]">
+               <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Control Magic</h3>
+               <p className="text-slate-300 text-sm mb-6">Choose which creature Control Magic should enchant as it enters the battlefield.</p>
+               <div className="flex flex-wrap gap-3 lg:gap-5 justify-center mb-6 overflow-y-auto custom-scrollbar p-2 w-full">
+                  {[...state.ai.board, ...state.player.board].filter(c => localPendingAction.validTargets.includes(c.id)).map(c => (
+                     <div key={c.id} onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', selectedTargetId: c.id })} className="cursor-pointer transition-all hover:opacity-100 opacity-90">
+                        <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                     </div>
+                  ))}
+               </div>
+               <button onClick={() => dispatch({ type: 'SUBMIT_PENDING_ACTION', selectedTargetId: null })} className="px-8 py-3 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-xl w-full max-w-sm transition-colors">Skip</button>
             </div>
          </PeekableDialogOverlay>
       )}
@@ -6101,13 +6771,13 @@ export default function App() {
            onPeekEnd={handleBattlefieldPeekEnd}
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
          >
-            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg flex flex-col items-center text-center">
+             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Brainstorm</h3>
                <p className="text-slate-300 text-sm mb-6">Select 2 cards to put back on top of your library. The last selected card will be on top.</p>
-               <div className="flex flex-wrap gap-2 justify-center mb-6">
+               <div className="flex flex-wrap gap-3 lg:gap-5 justify-center mb-6">
                   {state.player.hand.map(c => (
                      <div key={c.id} onClick={() => dispatch({ type: 'TOGGLE_PENDING_SELECT', cardId: c.id })} className={`cursor-pointer transition-transform ${localPendingAction.selected.includes(c.id) ? 'ring-4 ring-blue-500 rounded-md shadow-[0_10px_20px_rgba(37,99,235,0.45)]' : 'opacity-80'}`}>
-                        <Card card={c} official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                        <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
                         {localPendingAction.selected.includes(c.id) && (
                           <div className="mt-2 text-[10px] font-bold tracking-widest text-blue-300 text-center">
                             {localPendingAction.selected.indexOf(c.id) === localPendingAction.selected.length - 1 ? 'TOP' : '2ND FROM TOP'}
@@ -6128,13 +6798,13 @@ export default function App() {
            onPeekEnd={handleBattlefieldPeekEnd}
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
          >
-            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg flex flex-col items-center text-center">
+             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Chart a Course</h3>
                <p className="text-slate-300 text-sm mb-6">You haven't attacked. Select 1 card to discard.</p>
-               <div className="flex flex-wrap gap-2 justify-center mb-6">
+               <div className="flex flex-wrap gap-3 lg:gap-5 justify-center mb-6">
                   {state.player.hand.map(c => (
                      <div key={c.id} onClick={() => dispatch({ type: 'TOGGLE_PENDING_SELECT', cardId: c.id })} className={`cursor-pointer transition-transform ${localPendingAction.selected.includes(c.id) ? 'ring-4 ring-red-500 rounded-md shadow-[0_10px_20px_rgba(239,68,68,0.4)]' : 'opacity-80'}`}>
-                        <Card card={c} official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                        <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
                      </div>
                   ))}
                </div>
@@ -6171,13 +6841,13 @@ export default function App() {
            onPeekEnd={handleBattlefieldPeekEnd}
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
          >
-            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg flex flex-col items-center text-center">
+             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Telling Time</h3>
                <p className="text-slate-300 text-sm mb-6">Assign 1 to Hand and 1 to Top. The remainder goes to the Bottom.</p>
-               <div className="flex gap-4 justify-center mb-6">
+               <div className="flex gap-4 lg:gap-8 justify-center mb-6 flex-wrap">
                   {localPendingAction.cards.map(c => (
                      <div key={c.id} className="flex flex-col items-center gap-2">
-                       <Card card={c} official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                       <Card card={c} zone="dialog" official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
                         <button onClick={() => dispatch({ type: 'UPDATE_TELLING_TIME', cardId: c.id, dest: 'hand' })} className={`w-full text-[10px] font-bold py-1 rounded transition-colors ${localPendingAction.hand === c.id ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400'}`}>HAND</button>
                         <button onClick={() => dispatch({ type: 'UPDATE_TELLING_TIME', cardId: c.id, dest: 'top' })} className={`w-full text-[10px] font-bold py-1 rounded transition-colors ${localPendingAction.top === c.id ? 'bg-green-600 text-white' : 'bg-slate-800 text-slate-400'}`}>TOP</button>
                      </div>
@@ -6195,11 +6865,11 @@ export default function App() {
            onPeekEnd={handleBattlefieldPeekEnd}
            overlayClassName="z-[100] flex flex-col items-center justify-center p-4 pb-24"
          >
-            <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg flex flex-col items-center text-center">
+             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-[min(96vw,112rem)] flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Halimar Depths</h3>
                <p className="text-slate-300 text-sm mb-5">Reorder the top 3 cards of your library.</p>
                <div className="w-full overflow-x-auto overflow-y-visible custom-scrollbar pb-3">
-                  <div className="flex gap-4 justify-center items-start min-w-max mx-auto px-1">
+                  <div className="flex gap-4 lg:gap-8 justify-center items-start min-w-max mx-auto px-1">
                      {localPendingAction.cards.map((c, i) => (
                         <div 
                            key={c.id} 
@@ -6216,7 +6886,7 @@ export default function App() {
                               <button disabled={i === 0} onClick={() => dispatch({ type: 'REORDER_HALIMAR', from: i, to: i - 1 })} className="px-2 py-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30">←</button>
                               <button disabled={i === localPendingAction.cards.length - 1} onClick={() => dispatch({ type: 'REORDER_HALIMAR', from: i, to: i + 1 })} className="px-2 py-1 rounded bg-slate-800 text-slate-300 disabled:opacity-30">→</button>
                            </div>
-                           <Card card={c} official={useOfficialCards} onZoom={null} disableHoverLift />
+                           <Card card={c} zone="dialog" official={useOfficialCards} onZoom={null} disableHoverLift />
                            <div className="h-4 w-full text-center text-[10px] font-bold text-slate-400">
                               {i === 0 ? 'TOP' : i === localPendingAction.cards.length - 1 ? 'BOTTOM' : ''}
                            </div>
@@ -6231,12 +6901,12 @@ export default function App() {
 
       {/* GAME LOG MODAL */}
       {showLog && (
-        <div className="absolute inset-0 bg-black/80 z-[100] flex flex-col p-4 backdrop-blur-md">
+        <div className="absolute inset-0 z-[100] flex min-h-0 flex-col bg-black/80 p-4 backdrop-blur-md">
            <div className="flex justify-between items-center mb-4 bg-slate-900 p-3 rounded-xl border border-slate-700 shadow-lg">
               <h2 className="font-arena-display font-bold tracking-[0.12em] uppercase text-blue-400 flex items-center gap-2"><Activity size={18}/> Battle Log</h2>
               <button onClick={() => setShowLog(false)} className="text-slate-400 hover:text-white p-1"><X size={20}/></button>
            </div>
-           <div className="space-y-2 flex-1 overflow-y-auto bg-slate-900/60 p-4 rounded-xl border border-slate-800 text-xs custom-scrollbar">
+           <div className="custom-scrollbar flex-1 min-h-0 space-y-2 overflow-y-auto rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-xs">
              {state.log.map((entry, i) => (
                <div key={i} className={`p-2 rounded border border-transparent ${i === 0 ? 'bg-slate-800 border-slate-600 text-blue-300 font-bold' : 'text-slate-400'}`}>{entry}</div>
              ))}
@@ -6309,7 +6979,7 @@ export default function App() {
 
             {isAiMirror && (
               <div className="h-[28%] flex items-start justify-center px-8 pt-2 overflow-x-visible">
-                <div className="relative h-[110px] sm:h-[138px] w-full max-w-3xl">
+                <div className="relative h-[110px] sm:h-[138px] lg:h-[176px] xl:h-[188px] w-full max-w-3xl lg:max-w-5xl xl:max-w-6xl">
                   {state.ai.hand.map((c, i) => (
                     <div
                       key={c.id}
@@ -6352,6 +7022,18 @@ export default function App() {
           
           {/* Glowing central divider */}
           <div className="absolute top-1/2 left-0 w-full h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent shadow-[0_0_15px_rgba(59,130,246,0.8)] -translate-y-1/2 pointer-events-none" />
+
+          {visibleKnownTopCard && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 flex max-w-[min(88vw,24rem)] items-center gap-2 rounded-full border border-cyan-300/50 bg-slate-950/90 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.24em] text-cyan-100 shadow-[0_0_20px_rgba(34,211,238,0.25)] backdrop-blur-sm pointer-events-none">
+              <span className="text-cyan-300/80">Known Top</span>
+              <span className="min-w-0 truncate text-white normal-case tracking-normal font-semibold">{visibleKnownTopCard.name}</span>
+              {visibleKnownTopQueueCount > 0 && (
+                <span className="shrink-0 rounded-full bg-cyan-400/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-[0.18em] text-cyan-100">
+                  +{visibleKnownTopQueueCount} more
+                </span>
+              )}
+            </div>
+          )}
           
           {/* Centered Phase Tracker Pill */}
           <div className={`absolute top-1/2 -translate-y-1/2 z-50 flex items-center transition-all duration-300 left-1/2 -translate-x-1/2 ${state.stack.length > 0 ? 'opacity-0 pointer-events-none scale-95' : 'opacity-100 scale-100'}`}>
@@ -6419,17 +7101,18 @@ export default function App() {
               </div>
            </div>
             <div className="flex-1 flex items-end justify-center px-2 pb-2 mt-auto z-40 w-full overflow-x-visible">
-               <div className="flex justify-center relative h-[100px] sm:h-[130px] w-full max-w-lg pr-12">
+               <div className="flex justify-center relative h-[100px] sm:h-[130px] lg:h-[186px] xl:h-[200px] w-full max-w-lg sm:max-w-2xl lg:max-w-5xl xl:max-w-6xl pr-12 lg:pr-20">
                   {state.player.hand.map((c, i) => {
                     return (
                       <div 
                          key={c.id} 
-                         className={`absolute bottom-0 transition-all duration-200 group origin-bottom ${state.priority === 'player' && !isAiMirror ? 'hover:-translate-y-8 cursor-pointer' : ''}`}
+                         className={`absolute bottom-0 transition-all duration-200 group origin-bottom ${state.priority === 'player' && !isAiMirror ? 'hover:-translate-y-6 lg:hover:-translate-y-7 lg:hover:!z-[160] cursor-pointer' : ''}`}
                          style={{ ...getHandFanStyle(i, state.player.hand.length, 'bottom'), zIndex: draggedIdx === i ? 80 : 20 + i }}
                       >
                          <Card 
                             card={c} zone="hand" official={useOfficialCards} onClick={(card) => handleCardClick(card, 'hand')} onZoom={setZoomedCard}
                             castable={!isAiMirror && (isCastable(c, state) || isCyclable(c, state))}
+                            desktopHoverZoom={state.priority === 'player' && !isAiMirror}
                             draggable={true} onDragStart={() => setDraggedIdx(i)} onDragOver={(e) => { e.preventDefault(); }}
                             onDrop={() => {
                                if (draggedIdx !== null && draggedIdx !== i) dispatch({ type: 'REORDER_HAND', from: draggedIdx, to: i });

@@ -8,6 +8,8 @@ const PRIVATE_PENDING_ACTION_TYPES = new Set([
   'HALIMAR_DEPTHS',
   'HAND_LAND_ACTION',
   'LAND_TYPE_CHOICE',
+  'METAMORPHOSE_CONTROL_MAGIC',
+  'METAMORPHOSE_DEPLOY',
   'MULLIGAN_BOTTOM',
   'MYSTIC_SANCTUARY',
   'PREDICT',
@@ -24,6 +26,28 @@ const swapSeatMap = (record) => ({
   player: record?.ai ?? null,
   ai: record?.player ?? null
 });
+const swapKnowledgeView = (view) => ({
+  knownTop: structuredClone(view?.knownTop || []),
+  knownHands: {
+    player: structuredClone(view?.knownHands?.ai || []),
+    ai: structuredClone(view?.knownHands?.player || [])
+  }
+});
+const swapKnowledgeState = (knowledge) => ({
+  player: swapKnowledgeView(knowledge?.ai),
+  ai: swapKnowledgeView(knowledge?.player)
+});
+const swapLogEntry = (entry) => {
+  if (typeof entry !== 'string') return entry;
+  return entry
+    .replace(/\bOpponent's\b/g, '__CODEx_OPP_POS__')
+    .replace(/\bYour\b/g, '__CODEx_YOUR__')
+    .replace(/\bOpponent\b/g, '__CODEx_OPP__')
+    .replace(/\bYou\b/g, 'Opponent')
+    .replace(/__CODEx_OPP__/g, 'You')
+    .replace(/__CODEx_YOUR__/g, "Opponent's")
+    .replace(/__CODEx_OPP_POS__/g, 'Your');
+};
 
 const createHiddenCard = (id) => ({
   id,
@@ -134,8 +158,8 @@ export const buildPeerGuestViewState = (canonicalState) => {
     pendingTargetSelection: sanitizePendingTargetSelection(swapPendingTargetSelection(state.pendingTargetSelection)),
     peerMulligan: swappedPeerMulligan,
     mulliganCount: swappedPeerMulligan?.counts?.player ?? state.mulliganCount ?? 0,
-    knowledge: structuredClone(initialState.knowledge),
-    log: []
+    knowledge: swapKnowledgeState(state.knowledge || initialState.knowledge),
+    log: Array.isArray(state.log) ? state.log.map(swapLogEntry) : []
   };
 
   return guestViewState;

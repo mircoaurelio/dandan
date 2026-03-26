@@ -47,6 +47,7 @@ const {
   getAiPolicyForActor,
   initialState,
   isActivatable,
+  qualifiesForDandanFreeMulligan,
   shouldAiMulliganOpeningHand
 } = engine;
 
@@ -137,14 +138,60 @@ const expect = (condition, message) => {
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
 
-test('mulligan stops at seven', () => {
-  let state = reducer(initialState, { type: 'START_GAME', mode: 'player', difficulty: 'medium' });
-  for (let i = 0; i < 8; i++) state = reducer(state, { type: 'MULLIGAN' });
-  expect(state.mulliganCount === 7, `expected mulliganCount 7, got ${state.mulliganCount}`);
+test('paid mulligans stop at seven when the hand does not qualify for a Dandan free redraw', () => {
+  const twoLandHand = [
+    makeCard(CARDS.ISLAND_1, { id: 'cap-land-a' }),
+    makeCard(CARDS.ISLAND_2, { id: 'cap-land-b' }),
+    makeCard(CARDS.BRAINSTORM, { id: 'cap-spell-a', owner: 'player' }),
+    makeCard(CARDS.PREDICT, { id: 'cap-spell-b', owner: 'player' }),
+    makeCard(CARDS.TELLING_TIME, { id: 'cap-spell-c', owner: 'player' }),
+    makeCard(CARDS.MENTAL_NOTE, { id: 'cap-spell-d', owner: 'player' }),
+    makeCard(CARDS.MEMORY_LAPSE, { id: 'cap-spell-e', owner: 'player' })
+  ];
+  expect(qualifiesForDandanFreeMulligan(twoLandHand) === false, 'two-land hand should not qualify for a free mulligan');
+  const state = makeState({
+    phase: 'mulligan',
+    priority: 'player',
+    mulliganCount: 7,
+    player: {
+      life: 20,
+      hand: twoLandHand,
+      board: [],
+      landsPlayed: 0
+    }
+  });
   const handSnapshot = state.player.hand.map((card) => card.id).join(',');
-  const afterExtra = reducer(state, { type: 'MULLIGAN' });
+  const afterExtra = reducer(state, { type: 'MULLIGAN', player: 'player' });
   expect(afterExtra.mulliganCount === 7, 'mulligan count advanced past seven');
   expect(afterExtra.player.hand.map((card) => card.id).join(',') === handSnapshot, 'extra mulligan changed hand after the cap');
+});
+
+test('one-land Dandan hands get a free mulligan', () => {
+  const openerLand = makeCard(CARDS.ISLAND_1, { id: 'free-mull-land' });
+  const openerSpells = [
+    makeCard(CARDS.BRAINSTORM, { id: 'free-mull-spell-a', owner: 'player' }),
+    makeCard(CARDS.PREDICT, { id: 'free-mull-spell-b', owner: 'player' }),
+    makeCard(CARDS.TELLING_TIME, { id: 'free-mull-spell-c', owner: 'player' }),
+    makeCard(CARDS.MEMORY_LAPSE, { id: 'free-mull-spell-d', owner: 'player' }),
+    makeCard(CARDS.UNSUBSTANTIATE, { id: 'free-mull-spell-e', owner: 'player' }),
+    makeCard(CARDS.MENTAL_NOTE, { id: 'free-mull-spell-f', owner: 'player' })
+  ];
+  const redraw = Array.from({ length: 7 }, (_, index) => makeCard(CARDS.ISLAND_2, { id: `free-mull-redraw-${index}` }));
+  let state = makeState({
+    phase: 'mulligan',
+    priority: 'player',
+    deck: redraw,
+    player: {
+      life: 20,
+      hand: [openerLand, ...openerSpells],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+  expect(qualifiesForDandanFreeMulligan(state.player.hand) === true, 'one-land opener should qualify for a free mulligan');
+  state = reducer(state, { type: 'MULLIGAN', player: 'player' });
+  expect(state.mulliganCount === 0, `free mulligan should not increase count, got ${state.mulliganCount}`);
+  expect(state.player.hand.length === 7, `free mulligan should redraw seven cards, got ${state.player.hand.length}`);
 });
 
 test('AI roster exposes the full rival cast', () => {
@@ -185,6 +232,34 @@ test('start game preserves free and adventure character metadata', () => {
   expect(adventureState.phase === 'mulligan', `adventure mode should start in mulligan, got ${adventureState.phase}`);
 });
 
+test('opening roll can give the first turn and opening hand to the opponent', () => {
+  const scriptedDeck = Array.from({ length: 14 }, (_, index) =>
+    makeCard(CARDS.ISLAND_1, { id: `opening-roll-${index + 1}` })
+  );
+
+  let state = reducer(initialState, {
+    type: 'START_GAME',
+    mode: 'player',
+    difficulty: 'medium',
+    deck: scriptedDeck,
+    startingPlayer: 'ai',
+    openingRoll: 13
+  });
+
+  expect(state.turn === 'ai', `expected AI to take the first turn, got ${state.turn}`);
+  expect(state.priority === 'player', `expected mulligan priority to stay with the local player, got ${state.priority}`);
+  expect(state.startingPlayer === 'ai', `expected startingPlayer ai, got ${state.startingPlayer}`);
+  expect(state.openingRoll === 13, `expected openingRoll 13, got ${state.openingRoll}`);
+  expect(state.ai.hand.some((card) => card.id === 'opening-roll-14'), 'AI should receive the first opening card when it starts');
+  expect(state.player.hand.some((card) => card.id === 'opening-roll-13'), 'Player should receive the second opening card when the AI starts');
+
+  state = reducer(state, { type: 'KEEP_HAND', player: 'player' });
+
+  expect(state.phase === 'upkeep', `expected phase upkeep after keeping, got ${state.phase}`);
+  expect(state.turn === 'ai', `expected AI to keep the first turn after mulligans, got ${state.turn}`);
+  expect(state.priority === 'ai', `expected priority to pass to the starting player after keeping, got ${state.priority}`);
+});
+
 test('Tortoise mulligans Island-heavy openers until it finds two blue non-Island lands', () => {
   const islandA = makeCard(CARDS.ISLAND_1, { id: 'tort-island-a' });
   const islandB = makeCard(CARDS.ISLAND_2, { id: 'tort-island-b' });
@@ -214,6 +289,17 @@ test('Tortoise mulligans Island-heavy openers until it finds two blue non-Island
     }
   });
   expect(shouldAiMulliganOpeningHand(onPlan, 'ai', 0) === false, 'Tortoise should keep an opener with two blue non-Island lands');
+
+  const genericAiFree = makeState({
+    aiCharacterId: 'shark',
+    ai: {
+      life: 20,
+      hand: [makeCard(CARDS.ISLAND_1, { id: 'generic-free-land' }), fillerSpell, dandan, makeCard(CARDS.BRAINSTORM, { id: 'generic-free-a' }), makeCard(CARDS.PREDICT, { id: 'generic-free-b' }), makeCard(CARDS.TELLING_TIME, { id: 'generic-free-c' }), makeCard(CARDS.MEMORY_LAPSE, { id: 'generic-free-d' })],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+  expect(shouldAiMulliganOpeningHand(genericAiFree, 'ai', 0) === true, 'All AI rivals should take the free Dandan mulligan on one-land openers');
 });
 
 test('Tortoise never plays Island lands', () => {
@@ -378,7 +464,52 @@ test('cycling from the prompt actually resolves, taps mana, and draws', () => {
   expect(state.player.board.some((card) => card.id === island.id && card.tapped), 'Cycling did not tap the mana source');
   expect(state.graveyard.some((card) => card.id === sandbar.id), 'Cycled land did not go to the graveyard');
   expect(!state.player.hand.some((card) => card.id === sandbar.id), 'Cycled land stayed in hand');
-  expect(state.player.hand.some((card) => card.id === drawCard.id), 'Cycling did not draw a replacement card');
+  expect(!state.player.hand.some((card) => card.id === drawCard.id), 'Cycling should not draw before the stack resolves');
+  expect(state.stack.length === 1, 'Cycling did not create a stack object');
+  expect(state.stack[0].activation?.source === 'cycling', 'Cycling stack object was not marked as a cycling ability');
+  expect(state.priority === 'ai', `Priority should pass after cycling, got ${state.priority}`);
+
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  expect(state.stackResolving === true, 'Cycling ability did not move to stack resolution');
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.player.hand.some((card) => card.id === drawCard.id), 'Cycling did not draw a replacement card after resolving');
+});
+
+test('Mystic Sanctuary keeps the revealed top card known until it is drawn', () => {
+  const sanctuary = makeCard(CARDS.MYSTIC_SANCTUARY, { id: 'sanctuary-top' });
+  const islandA = makeCard(CARDS.ISLAND_1, { id: 'sanctuary-island-a' });
+  const islandB = makeCard(CARDS.ISLAND_2, { id: 'sanctuary-island-b' });
+  const islandC = makeCard(CARDS.ISLAND_3, { id: 'sanctuary-island-c' });
+  const topSpell = makeCard(CARDS.BRAINSTORM, { id: 'sanctuary-brainstorm', owner: 'ai' });
+  const belowCard = makeCard(CARDS.ISLAND_4, { id: 'sanctuary-below', owner: 'ai' });
+
+  let state = makeState({
+    turn: 'ai',
+    priority: 'ai',
+    deck: [belowCard],
+    graveyard: [topSpell],
+    ai: {
+      life: 20,
+      hand: [sanctuary],
+      board: [islandA, islandB, islandC],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'PLAY_LAND', player: 'ai', cardId: sanctuary.id });
+
+  expect(state.ai.board.some((card) => card.id === sanctuary.id && !card.tapped), 'Mystic Sanctuary should enter untapped with three other Islands');
+  expect(state.deck[state.deck.length - 1]?.id === topSpell.id, 'Mystic Sanctuary did not put the chosen spell on top of the library');
+  expect(state.knowledge.ai.knownTop[0]?.id === topSpell.id, 'Controller should know the card Mystic Sanctuary put on top');
+  expect(state.knowledge.player.knownTop[0]?.id === topSpell.id, 'Opponent should know the public card Mystic Sanctuary put on top');
+
+  state = reducer(state, { type: 'DRAW', player: 'ai' });
+
+  expect(state.ai.hand.some((card) => card.id === topSpell.id), 'Mystic Sanctuary top card was not drawn from the library');
+  expect(state.knowledge.ai.knownTop.length === 0, 'Controller top-card note should clear after the card is drawn');
+  expect(state.knowledge.player.knownTop.length === 0, 'Opponent top-card note should clear after the card is drawn');
 });
 
 test('AI Predict uses only cards it actually knows are on top', () => {
@@ -435,9 +566,33 @@ test('AI Predict does not cheat on an unknown top card', () => {
   expect(state.graveyard.some((card) => card.id === topCard.id), 'Predict still needs to mill the top card');
 });
 
+test('Surgical Bay needs two other untapped Islands to activate', () => {
+  const surgicalBay = makeCard(CARDS.SURGICAL_BAY, { id: 'bay-needs-two' });
+  const island = makeCard(CARDS.ISLAND_1, { id: 'bay-needs-two-island' });
+
+  const state = makeState({
+    turn: 'player',
+    priority: 'player',
+    player: {
+      life: 20,
+      hand: [],
+      board: [surgicalBay, island],
+      landsPlayed: 0
+    }
+  });
+
+  expect(!isActivatable(surgicalBay, state, 'player'), 'Surgical Bay should not be activatable with only one other Island');
+
+  const nextState = reducer(state, { type: 'ACTIVATE_LAND_NOW', player: 'player', cardId: surgicalBay.id, cardName: surgicalBay.name });
+  expect(nextState.stack.length === 0, 'Illegal Surgical Bay activation should not create a stack object');
+  expect(nextState.graveyard.length === 0, 'Illegal Surgical Bay activation should not sacrifice the land');
+  expect(nextState.player.board.some((card) => card.id === surgicalBay.id), 'Illegal Surgical Bay activation should leave the Bay on the battlefield');
+});
+
 test('direct land activation works for AI-only actions', () => {
   const surgicalBay = makeCard(CARDS.SURGICAL_BAY, { id: 'ai-bay' });
-  const island = makeCard(CARDS.ISLAND_1, { id: 'ai-bay-fuel' });
+  const islandA = makeCard(CARDS.ISLAND_1, { id: 'ai-bay-fuel-a' });
+  const islandB = makeCard(CARDS.ISLAND_2, { id: 'ai-bay-fuel-b' });
   const drawCard = makeCard(CARDS.TELLING_TIME, { id: 'ai-bay-draw', owner: 'ai' });
 
   let state = makeState({
@@ -447,7 +602,7 @@ test('direct land activation works for AI-only actions', () => {
     ai: {
       life: 20,
       hand: [],
-      board: [surgicalBay, island],
+      board: [surgicalBay, islandA, islandB],
       landsPlayed: 0
     }
   });
@@ -470,8 +625,10 @@ test('direct land activation works for AI-only actions', () => {
 test('stacked Surgical Bay activations create a real draw war for the top card', () => {
   const playerBay = makeCard(CARDS.SURGICAL_BAY, { id: 'draw-war-player-bay' });
   const aiBay = makeCard(CARDS.SURGICAL_BAY, { id: 'draw-war-ai-bay' });
-  const playerIsland = makeCard(CARDS.ISLAND_1, { id: 'draw-war-player-island' });
-  const aiIsland = makeCard(CARDS.ISLAND_2, { id: 'draw-war-ai-island' });
+  const playerIslandA = makeCard(CARDS.ISLAND_1, { id: 'draw-war-player-island-a' });
+  const playerIslandB = makeCard(CARDS.ISLAND_2, { id: 'draw-war-player-island-b' });
+  const aiIslandA = makeCard(CARDS.ISLAND_3, { id: 'draw-war-ai-island-a' });
+  const aiIslandB = makeCard(CARDS.ISLAND_4, { id: 'draw-war-ai-island-b' });
   const topCard = makeCard(CARDS.BRAINSTORM, { id: 'draw-war-top', owner: 'ai' });
   const secondCard = makeCard(CARDS.PREDICT, { id: 'draw-war-second', owner: 'player' });
 
@@ -483,13 +640,13 @@ test('stacked Surgical Bay activations create a real draw war for the top card',
     player: {
       life: 20,
       hand: [],
-      board: [playerBay, playerIsland],
+      board: [playerBay, playerIslandA, playerIslandB],
       landsPlayed: 0
     },
     ai: {
       life: 20,
       hand: [],
-      board: [aiBay, aiIsland],
+      board: [aiBay, aiIslandA, aiIslandB],
       landsPlayed: 0
     }
   });
@@ -845,7 +1002,7 @@ test('easy AI holds up interaction instead of tapping out into next-turn lethal'
   expect(action.type === 'PASS_PRIORITY', `Easy AI should preserve mana for defense here, got ${action.type}`);
 });
 
-test('medium AI rescues its creature from Control Magic with Metamorphose on the stack', () => {
+test('medium AI does not use Metamorphose as an illegal self-rescue on the stack', () => {
   const aiDandan = makeCard(CARDS.DANDAN, { id: 'stack-rescue-dandan', owner: 'ai', summoningSickness: false });
   const aiIslands = [
     makeCard(CARDS.ISLAND_1, { id: 'stack-rescue-island-1' }),
@@ -868,9 +1025,7 @@ test('medium AI rescues its creature from Control Magic with Metamorphose on the
   });
 
   const action = chooseAiAction(state, 'ai', 'medium', tacticalPolicy);
-  expect(action.type === 'CAST_SPELL', `Medium AI should protect its Dandan on the stack, got ${action.type}`);
-  expect(action.cardId === metamorphose.id, 'Medium AI should use Metamorphose as the rescue spell');
-  expect(action.target?.id === aiDandan.id, 'Medium AI should target its own Dandan to fizzle Control Magic');
+  expect(!(action.type === 'CAST_SPELL' && action.cardId === metamorphose.id), 'Medium AI should not target its own creature with Metamorphose');
 });
 
 test('Svyelunite Temple sacrifices for {U}{U} and that mana can be spent this phase', () => {
@@ -1290,6 +1445,145 @@ test('Metamorphose on Control Magic returns the Dandan to its owner', () => {
   expect(returnedDandan.summoningSickness === true, 'Returned Dandan should have summoning sickness after control changes back');
 });
 
+test('Crystal Spray can target a Dandan spell on the stack', () => {
+  const dandanSpell = makeCard(CARDS.DANDAN, { id: 'stack-spray-dandan', owner: 'player' });
+  const spray = makeCard(CARDS.CRYSTAL_SPRAY, { id: 'stack-spray-card', owner: 'ai' });
+  const drawCard = makeCard(CARDS.BRAINSTORM, { id: 'stack-spray-draw', owner: 'ai' });
+  const supportingSwamp = makeCard(CARDS.ISLAND_4, {
+    id: 'stack-spray-support-swamp',
+    owner: 'player',
+    landType: 'Swamp',
+    isSwamp: true,
+    blueSources: 0
+  });
+  const aiIslands = [
+    makeCard(CARDS.ISLAND_1, { id: 'stack-spray-island-1' }),
+    makeCard(CARDS.ISLAND_2, { id: 'stack-spray-island-2' }),
+    makeCard(CARDS.ISLAND_3, { id: 'stack-spray-island-3' })
+  ];
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main2',
+    priority: 'ai',
+    deck: [drawCard],
+    stack: [{ card: dandanSpell, controller: 'player', target: null, landTypeChoice: null }],
+    ai: {
+      life: 20,
+      hand: [spray],
+      board: aiIslands,
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [supportingSwamp],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: spray.id, target: state.stack[0], landTypeChoice: 'Swamp' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.stack[0]?.card?.dandanLandType === 'Swamp', 'Crystal Spray should be able to change a Dandan spell on the stack');
+  expect(state.ai.hand.length === 1, 'Crystal Spray should still draw a card after targeting a spell');
+
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  const resolvedDandan = state.player.board.find((card) => card.id === dandanSpell.id);
+  expect(resolvedDandan?.dandanLandType === 'Swamp', 'Stack-targeted Crystal Spray should carry through to the resolved permanent');
+});
+
+test('Metamorphose lets the permanent owner put Dandan onto the battlefield from hand', () => {
+  const playerLand = makeCard(CARDS.ISLAND_1, { id: 'meta-drop-land', owner: 'player' });
+  const supportIsland = makeCard(CARDS.ISLAND_2, { id: 'meta-drop-support', owner: 'player' });
+  const playerDandan = makeCard(CARDS.DANDAN, { id: 'meta-drop-dandan', owner: 'player' });
+  const metamorphose = makeCard(CARDS.METAMORPHOSE, { id: 'meta-drop-spell', owner: 'ai' });
+  const aiIslands = [
+    makeCard(CARDS.ISLAND_2, { id: 'meta-drop-ai-island-1' }),
+    makeCard(CARDS.ISLAND_3, { id: 'meta-drop-ai-island-2' })
+  ];
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main1',
+    priority: 'ai',
+    ai: {
+      life: 20,
+      hand: [metamorphose],
+      board: aiIslands,
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [playerDandan],
+      board: [playerLand, supportIsland],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: metamorphose.id, target: playerLand });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.pendingAction?.type === 'METAMORPHOSE_DEPLOY', 'Metamorphose should prompt the permanent owner to deploy a card from hand');
+  state = reducer(state, { type: 'SUBMIT_PENDING_ACTION', selectedCardId: playerDandan.id });
+
+  expect(state.player.board.some((card) => card.id === playerDandan.id), 'Metamorphose should allow Dandan to enter from hand');
+  expect(state.player.hand.every((card) => card.id !== playerDandan.id), 'Metamorphose deployment should remove the chosen card from hand');
+});
+
+test('Metamorphose can put Control Magic onto the battlefield from hand', () => {
+  const playerLand = makeCard(CARDS.ISLAND_1, { id: 'meta-cm-land', owner: 'player' });
+  const supportIsland = makeCard(CARDS.ISLAND_2, { id: 'meta-cm-support', owner: 'player' });
+  const controlMagic = makeCard(CARDS.CONTROL_MAGIC, { id: 'meta-cm-aura', owner: 'player' });
+  const enemyDandan = makeCard(CARDS.DANDAN, { id: 'meta-cm-dandan', owner: 'ai', summoningSickness: false });
+  const metamorphose = makeCard(CARDS.METAMORPHOSE, { id: 'meta-cm-spell', owner: 'ai' });
+  const aiIslands = [
+    makeCard(CARDS.ISLAND_2, { id: 'meta-cm-ai-island-1' }),
+    makeCard(CARDS.ISLAND_3, { id: 'meta-cm-ai-island-2' })
+  ];
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main1',
+    priority: 'ai',
+    ai: {
+      life: 20,
+      hand: [metamorphose],
+      board: [...aiIslands, enemyDandan],
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [controlMagic],
+      board: [playerLand, supportIsland],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: metamorphose.id, target: playerLand });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.pendingAction?.type === 'METAMORPHOSE_DEPLOY', 'Metamorphose should offer Control Magic as a deployment option');
+  state = reducer(state, { type: 'SUBMIT_PENDING_ACTION', selectedCardId: controlMagic.id });
+  expect(state.pendingAction?.type === 'METAMORPHOSE_CONTROL_MAGIC', 'Control Magic deployment should ask for an enchant target');
+  state = reducer(state, { type: 'SUBMIT_PENDING_ACTION', selectedTargetId: enemyDandan.id });
+
+  const auraOnBoard = state.player.board.find((card) => card.id === controlMagic.id);
+  const stolenDandan = state.player.board.find((card) => card.id === enemyDandan.id);
+  expect(Boolean(auraOnBoard), 'Control Magic should enter the battlefield from Metamorphose');
+  expect(Boolean(stolenDandan), 'Control Magic from Metamorphose should steal the chosen creature');
+  expect(stolenDandan?.controlledByAuraId === auraOnBoard?.id, 'Metamorphosed Control Magic should stay linked to the stolen creature');
+});
+
 test('zone changes reset a transformed Dandan back to Island dependency', () => {
   const aiIslands = [
     makeCard(CARDS.ISLAND_1, { id: 'reset-fish-ai-island-1' }),
@@ -1390,6 +1684,49 @@ test('zone changes reset a transformed Island back to being an Island', () => {
   expect(topCard.landType === 'Island', 'Island kept a stale transformed land type after leaving the battlefield');
   expect(topCard.blueSources === 1, 'Island did not regain blue mana production after leaving the battlefield');
   expect(topCard.isSwamp === false, 'Island kept stale Swamp state after leaving the battlefield');
+});
+
+test('Memory Lapse returns a reset spell to the top of its owner\'s library', () => {
+  const lapse = makeCard(CARDS.MEMORY_LAPSE, { id: 'memory-lapse-reset', owner: 'ai' });
+  const aiIslands = [
+    makeCard(CARDS.ISLAND_1, { id: 'memory-lapse-ai-a' }),
+    makeCard(CARDS.ISLAND_2, { id: 'memory-lapse-ai-b' })
+  ];
+  const transformedDandanSpell = makeCard(CARDS.DANDAN, {
+    id: 'memory-lapse-target-dandan',
+    owner: 'player',
+    dandanLandType: 'Swamp'
+  });
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main2',
+    priority: 'ai',
+    stack: [{ card: transformedDandanSpell, controller: 'player', target: null }],
+    ai: {
+      life: 20,
+      hand: [lapse],
+      board: aiIslands,
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'CAST_SPELL', player: 'ai', cardId: lapse.id, target: state.stack[0] });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'player' });
+  state = reducer(state, { type: 'PASS_PRIORITY', player: 'ai' });
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  const topCard = state.deck[state.deck.length - 1];
+  expect(topCard?.id === transformedDandanSpell.id, 'Memory Lapse did not return the targeted spell to the top of the library');
+  expect(topCard?.owner === 'player', 'Memory Lapse should keep the targeted spell owned by its original player');
+  expect(topCard?.dandanLandType === 'Island', 'Memory Lapse should reset stack text changes before returning the spell');
+  expect(state.stack.every((entry) => entry.card.id !== transformedDandanSpell.id), 'Memory Lapse should remove the targeted spell from the stack');
 });
 
 test('Crystal Spray reverts at end of turn after the cleanup window', () => {

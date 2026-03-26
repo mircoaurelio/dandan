@@ -22,10 +22,10 @@ export const CARDS = {
   CAPTURE: buildCard(2149, 'Capture of Jingzhou', 'Sorcery', 5, '{3}{U}{U}', "Take an extra turn after this one.", null, false, false),
   CHART: buildCard(2150, 'Chart a Course', 'Sorcery', 2, '{1}{U}', "Draw 2 cards. Then discard a card unless you attacked with a creature this turn.", null, false, false),
   CONTROL_MAGIC: buildCard(2151, 'Control Magic', 'Enchantment â€” Aura', 4, '{2}{U}{U}', "Enchant creature. You control enchanted creature.", null, false, false),
-  CRYSTAL_SPRAY: buildCard(2152, 'Crystal Spray', 'Instant', 3, '{2}{U}', "Change the text of target permanent by replacing all instances of one color word or basic land type with another. Draw a card.", null, true, false),
+  CRYSTAL_SPRAY: buildCard(2152, 'Crystal Spray', 'Instant', 3, '{2}{U}', "Change the text of target spell or permanent by replacing all instances of one color word or basic land type with another. Draw a card.", null, true, false),
   DAYS_UNDOING: buildCard(2153, "Day's Undoing", 'Sorcery', 3, '{2}{U}', "Each player shuffles hand and grave into library, draws 7. If it's your turn, end the turn.", null, false, false),
   MENTAL_NOTE: buildCard(2154, 'Mental Note', 'Instant', 1, '{U}', "Mill 2 cards, then draw a card.", null, true, false),
-  METAMORPHOSE: buildCard(2155, 'Metamorphose', 'Instant', 2, '{1}{U}', "Put target permanent on top of its owner's library.", null, true, false),
+  METAMORPHOSE: buildCard(2155, 'Metamorphose', 'Instant', 2, '{1}{U}', "Put target opponent-controlled permanent on top of its owner's library. That permanent's owner may put an artifact, creature, enchantment, or land card from their hand onto the battlefield.", null, true, false),
   PREDICT: buildCard(2156, 'Predict', 'Instant', 2, '{1}{U}', "Name a card, then put the top card of the shared library into the graveyard. If the milled card has the chosen name, draw two cards. Otherwise, draw a card.", null, true, false),
   TELLING_TIME: buildCard(2157, 'Telling Time', 'Instant', 2, '{1}{U}', "Look at the top three cards of your library. Put one of those cards into your hand, one on top of your library, and one on the bottom of your library.", null, true, false),
   UNSUBSTANTIATE: buildCard(2158, 'Unsubstantiate', 'Instant', 2, '{1}{U}', "Return target spell or creature to its owner's hand.", null, true, false),
@@ -33,7 +33,7 @@ export const CARDS = {
   FENGRAF: buildCard(2160, 'Haunted Fengraf', 'Land', 0, '', "{T}: Add {C}. {3}, {T}, Sac: Return random creature from grave to hand.", null, false, true),
   SANDBAR: buildCard(2161, 'Lonely Sandbar', 'Land', 0, '', "Enters tapped. {T}: Add {U}. Cycling {U}.", null, false, true),
   REMOTE_ISLE: buildCard(2162, 'Remote Isle', 'Land', 0, '', "Enters tapped. {T}: Add {U}. Cycling {2}.", null, false, true),
-  SURGICAL_BAY: buildCard(2163, 'The Surgical Bay', 'Land', 0, '', "Enters tapped. {T}: Add {U}. {U}, {T}, Sac: Draw a card.", null, false, true),
+  SURGICAL_BAY: buildCard(2163, 'The Surgical Bay', 'Land', 0, '', "Enters tapped. {T}: Add {U}. {1}{U}, {T}, Sac: Draw a card.", null, false, true),
   TEMPLE: buildCard(2164, 'Svyelunite Temple', 'Land', 0, '', "Enters tapped. {T}: Add {U}. {T}, Sac: Add {U}{U}.", null, false, true)
 };
 
@@ -444,6 +444,16 @@ const getBlueSources = (card) => {
 
 const getBlueRequirement = (manaCost) => (manaCost.match(/\{U\}/g) || []).length;
 const isCreatureTemplate = (card) => Boolean(card) && (card.type?.includes('Creature') || card.name === DANDAN_NAME);
+const isPermanentHandCard = (card) => Boolean(card) && (
+  card.isLand ||
+  isCreatureTemplate(card) ||
+  card.type?.includes('Enchantment') ||
+  card.type?.includes('Artifact')
+);
+export const qualifiesForDandanFreeMulligan = (hand = []) => {
+  const landCount = hand.filter(card => card?.isLand).length;
+  return landCount === 1 || landCount >= 5;
+};
 const PRINTED_DANDAN_LAND_TYPE = 'Island';
 export const LAND_TYPE_CHOICES = ['Plains', 'Island', 'Swamp', 'Mountain', 'Forest'];
 const isLandTypeChoice = (landType) => LAND_TYPE_CHOICES.includes(landType);
@@ -567,6 +577,10 @@ const preparePermanentForZoneChange = (card, overrides = {}) => ({
   attacking: false,
   blocking: false,
   summoningSickness: isCreatureCard(card),
+  ...overrides
+});
+const prepareCardForZoneChange = (card, overrides = {}) => ({
+  ...resetZoneChangedTextState(clearAttachmentState(card)),
   ...overrides
 });
 export const getManaStats = (board, pool = EMPTY_MANA_POOL) => {
@@ -770,6 +784,10 @@ const createPeerMulliganState = () => ({
 const isPeerGame = (state) => state.gameMode === 'peer';
 const isHumanControlledSeat = (state, seat) => state.gameMode === 'peer' || (seat === 'player' && state.gameMode !== 'ai_vs_ai');
 const getSeatLabel = (seat) => seat === 'player' ? 'You' : 'Opponent';
+const getSeatPossessiveLabel = (seat) => seat === 'player' ? 'Your' : "Opponent's";
+const getSeatTargetLabel = (seat) => seat === 'player' ? 'your' : "opponent's";
+const MAX_LOG_ENTRIES = 250;
+const trimLog = (entries = []) => entries.slice(0, MAX_LOG_ENTRIES);
 const getPeerMulliganState = (state) => state.peerMulligan || createPeerMulliganState();
 const getPeerMulliganCount = (state, seat) => getPeerMulliganState(state).counts?.[seat] || 0;
 const markPeerSeatKept = (state, seat) => {
@@ -789,7 +807,7 @@ const haveBothPeerSeatsKept = (state) => {
 export const initialState = {
   started: false, deck: [], graveyard: [], exile: [], stack: [], knowledge: createKnowledgeState(), turn: 'player', phase: 'mulligan', priority: 'player',
   consecutivePasses: 0, actionCount: 0, pendingTargetSelection: null, pendingAction: null,
-  mulliganCount: 0, isFirstTurn: true,
+  mulliganCount: 0, isFirstTurn: true, startingPlayer: 'player', openingRoll: null,
   peerMulligan: null,
   gameMode: 'player',
   difficulty: 'medium',
@@ -967,7 +985,7 @@ const checkStateBasedActions = (state) => {
       if (deadDandans.length > 0) {
         newState[p].board = newState[p].board.filter(c => !deadDandans.includes(c));
         newState.graveyard = [...newState.graveyard, ...deadDandans.map(card => preparePermanentForZoneChange(card))];
-        newState.log = [...newState.log, `${p === 'player' ? 'Your' : "AI's"} DandÃ¢ns died (no ${getDandanLandType(deadDandans[0])}s).`];
+        newState.log = trimLog([`${getSeatPossessiveLabel(p)} DandÃ¢ns died (no ${getDandanLandType(deadDandans[0])}s).`, ...newState.log]);
         changedThisPass = true;
       }
       if (newState[p].life <= 0 && !newState.winner) {
@@ -984,14 +1002,18 @@ const checkStateBasedActions = (state) => {
 };
 
 const getActivationDetails = (cardName) => {
-  if (cardName === 'The Surgical Bay') return { total: 1, blue: 1, effect: 'draw', usesStack: true };
+  if (cardName === 'The Surgical Bay') return { total: 2, blue: 1, effect: 'draw', usesStack: true };
   if (cardName === 'Svyelunite Temple') return { total: 0, blue: 0, effect: 'double_blue', usesStack: false };
   if (cardName === 'Haunted Fengraf') return { total: 3, blue: 0, effect: 'fengraf', usesStack: true };
   return null;
 };
 const isAbilityStackEntry = (entry) => entry?.kind === 'ability';
 const isSpellStackEntry = (entry) => Boolean(entry) && !isAbilityStackEntry(entry);
-const getStackEntryName = (entry) => isAbilityStackEntry(entry) ? `${entry.card.name} ability` : entry.card.name;
+const getStackEntryName = (entry) => {
+  if (!isAbilityStackEntry(entry)) return entry.card.name;
+  if (entry.activation?.source === 'cycling') return `${entry.card.name} cycling`;
+  return `${entry.card.name} ability`;
+};
 const getTopSpellOnStack = (stack) => [...stack].reverse().find(isSpellStackEntry) || null;
 
 const getCyclingCost = (cardName) => {
@@ -1007,6 +1029,16 @@ export const isActivatable = (card, state, player = 'player') => {
   
   const activation = getActivationDetails(card.name);
   if (!activation) return false;
+
+  if (card.name === 'The Surgical Bay') {
+    const untappedOtherIslands = state[player].board.filter(otherCard => (
+      otherCard.id !== card.id &&
+      otherCard.isLand &&
+      !otherCard.tapped &&
+      getLandType(otherCard) === 'Island'
+    ));
+    return untappedOtherIslands.length >= 2;
+  }
 
   if (!canPayCost(state[player].board.filter(c => c.id !== card.id), getManaPool(state, player), activation.total, activation.blue)) return false;
   
@@ -1044,7 +1076,8 @@ export const isCastable = (card, state, player = 'player') => {
   if (card.name === 'Memory Lapse' && !anySpellOnStack) return false;
   if (card.name === 'Unsubstantiate' && !anySpellOnStack && !anyDandan) return false;
   
-  if (['Magical Hack', 'Crystal Spray', 'Metamorphose'].includes(card.name) && state.stack.length === 0 && state.player.board.length === 0 && state.ai.board.length === 0) return false;
+  if (card.name === 'Crystal Spray' && state.stack.length === 0 && state.player.board.length === 0 && state.ai.board.length === 0) return false;
+  if (['Magical Hack', 'Metamorphose'].includes(card.name) && state.player.board.length === 0 && state.ai.board.length === 0) return false;
   if (card.name === 'Control Magic' && ![...state.player.board, ...state.ai.board].some(isCreatureCard)) return false;
 
   return true;
@@ -1056,7 +1089,12 @@ export const isValidTarget = (card, zone, state) => {
   
   if (spellName === 'Memory Lapse') return zone === 'stack' && isSpellStackEntry(card);
   if (spellName === 'Unsubstantiate') return (zone === 'stack' && isSpellStackEntry(card)) || (zone === 'board' && isCreatureCard(card));
-  if (['Magical Hack', 'Crystal Spray', 'Metamorphose'].includes(spellName)) return zone === 'board';
+  if (spellName === 'Magical Hack') return zone === 'board';
+  if (spellName === 'Crystal Spray') return zone === 'board' || (zone === 'stack' && isSpellStackEntry(card));
+  if (spellName === 'Metamorphose') {
+    const caster = state.pendingTargetSelection?.player || 'player';
+    return zone === 'board' && getBattlefieldController(state, card.id) === getOpponent(caster);
+  }
   if (spellName === 'Control Magic') return zone === 'board' && isCreatureCard(card);
   return false;
 };
@@ -1434,18 +1472,21 @@ const getAiOpeningBottomCards = (state, actor, count, policy) => [...state[actor
   .sort((left, right) => getAiOpeningBottomScore(state, actor, left, policy) - getAiOpeningBottomScore(state, actor, right, policy) || left.cost - right.cost)
   .slice(0, count);
 export const shouldAiMulliganOpeningHand = (state, actor, mulligansTaken = 0) => {
+  const hand = state[actor].hand;
+  if (qualifiesForDandanFreeMulligan(hand)) return true;
   if (!isTortoise(state, actor)) return false;
   if (mulligansTaken >= 3) return false;
-  const hand = state[actor].hand;
   const nonIslandBlueLands = hand.filter(isBlueNonIslandLandCard).length;
   return nonIslandBlueLands < 2;
 };
 const runAiOpeningMulligans = (state, actor) => {
   const characterId = getActorCharacterId(state, actor);
-  if (!characterId) return 0;
+  if (!characterId && !qualifiesForDandanFreeMulligan(state[actor].hand)) return 0;
 
   let mulligansTaken = 0;
-  while (shouldAiMulliganOpeningHand(state, actor, mulligansTaken)) {
+  let safety = 0;
+  while (shouldAiMulliganOpeningHand(state, actor, mulligansTaken) && safety < 12) {
+    const isFreeMulligan = qualifiesForDandanFreeMulligan(state[actor].hand);
     state.deck = [...state.deck, ...state[actor].hand];
     state[actor].hand = [];
     resetHiddenKnowledge(state);
@@ -1454,7 +1495,8 @@ const runAiOpeningMulligans = (state, actor) => {
       [state.deck[i], state.deck[j]] = [state.deck[j], state.deck[i]];
     }
     drawCards(state, actor, 7);
-    mulligansTaken++;
+    if (!isFreeMulligan) mulligansTaken++;
+    safety++;
   }
 
   if (mulligansTaken > 0) {
@@ -1596,6 +1638,24 @@ const getBattlefieldController = (state, cardId) => {
   if (state.player.board.some(card => card.id === cardId)) return 'player';
   if (state.ai.board.some(card => card.id === cardId)) return 'ai';
   return null;
+};
+const describePublicTarget = (state, target) => {
+  if (!target) return '';
+  if (target.card && isSpellStackEntry(target)) {
+    const controller = target.controller || null;
+    const seatPrefix = controller ? `${getSeatTargetLabel(controller)} ` : '';
+    return `${seatPrefix}${target.card.name} on the stack`;
+  }
+  const controller = target.id ? getBattlefieldController(state, target.id) : null;
+  const seatPrefix = controller ? `${getSeatTargetLabel(controller)} ` : '';
+  return `${seatPrefix}${target.name || 'target'}`;
+};
+const buildCastLogMessage = (state, player, card, target = null, landTypeChoice = null) => {
+  let message = `${getSeatLabel(player)} cast ${card.name}`;
+  const targetLabel = describePublicTarget(state, target);
+  if (targetLabel) message += ` targeting ${targetLabel}`;
+  if (landTypeChoice) message += `, choosing ${landTypeChoice}`;
+  return `${message}.`;
 };
 const getThreatenedFriendlyCreaturesFromSpell = (state, actor, stackSpell) => {
   const target = stackSpell?.target?.card || stackSpell?.target;
@@ -1903,6 +1963,21 @@ const getBounceTargetCandidates = (state, actor) => {
     if (card.name === DANDAN_NAME && (card.owner || opponent) === actor) score += 10;
     if (card.controlledByAuraId && (card.owner || opponent) === actor) score += 5;
     if (card.isLand) score += getLandType(card) === 'Island' ? 1.5 : 0.5;
+    const nextState = {
+      ...state,
+      player: {
+        ...state.player,
+        board: opponent === 'player' ? nextBoard : state.player.board
+      },
+      ai: {
+        ...state.ai,
+        board: opponent === 'ai' ? nextBoard : state.ai.board
+      }
+    };
+    const owner = card.owner || opponent;
+    const ownerPolicy = getAiPolicyForActor(nextState, owner);
+    const deployScore = getMetamorphoseDeployOptions(nextState, owner, ownerPolicy)[0]?.score || 0;
+    score += owner === actor ? deployScore * 0.85 : -deployScore * 0.85;
     return { target: card, score };
   });
 
@@ -1912,13 +1987,164 @@ const pickBounceTarget = (state, actor) => getBounceTargetCandidates(state, acto
 
 const getControlMagicTargetCandidates = (state, actor) => {
   const opponent = getOpponent(actor);
-  const targets = state[opponent].board.filter(card => card.name === DANDAN_NAME && isDandanSupported(card, state[opponent].board) && boardHasLandType(state[actor].board, getDandanLandType(card)));
+  const targets = state[opponent].board.filter(isCreatureCard);
   return targets.map(target => ({
     target,
-    score: 13 + (target.attacking ? 2 : 0) + (state[actor].life <= 8 ? 1.5 : 0)
+    score: 8
+      + (target.name === DANDAN_NAME ? 6 : 0)
+      + (target.attacking ? 2 : 0)
+      + (state[actor].life <= 8 ? 1.5 : 0)
+      + (isDandanSupported(target, state[opponent].board) ? 4 : 0)
+      + (((target.owner || opponent) === actor) ? 10 : 0)
   })).sort((left, right) => right.score - left.score);
 };
 const pickControlMagicTarget = (state, actor) => getControlMagicTargetCandidates(state, actor)[0] || null;
+const getMetamorphoseDeployOptions = (state, actor, policy = getAiPolicyForActor(state, actor)) => {
+  const controlMagicTarget = getControlMagicTargetCandidates(state, actor)[0] || null;
+  return state[actor].hand
+    .filter(isPermanentHandCard)
+    .map((card) => {
+      if (card.name === 'Control Magic') {
+        if (!controlMagicTarget) return null;
+        return {
+          card,
+          targetId: controlMagicTarget.target.id,
+          score: 7 + controlMagicTarget.score + getAiCardValue(state, actor, card, policy)
+        };
+      }
+      let score = getAiCardValue(state, actor, card, policy);
+      if (card.isLand) score += 2.5;
+      if (card.name === DANDAN_NAME && controlsIsland(state[getOpponent(actor)].board)) score += 1.5;
+      return {
+        card,
+        targetId: null,
+        score
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.score - left.score);
+};
+const resolveControlMagicBattlefieldEntry = (state, controller, auraCard, targetId) => {
+  let targetController = null;
+  let targetIdx = -1;
+  ['player', 'ai'].forEach((seat) => {
+    if (targetIdx > -1) return;
+    const foundIdx = state[seat].board.findIndex(card => card.id === targetId && isCreatureCard(card));
+    if (foundIdx > -1) {
+      targetController = seat;
+      targetIdx = foundIdx;
+    }
+  });
+
+  if (!targetController || targetIdx < 0) return false;
+
+  const [stolen] = state[targetController].board.splice(targetIdx, 1);
+  const aura = {
+    ...clearAttachmentState(auraCard),
+    owner: auraCard.owner || controller,
+    summoningSickness: false,
+    enchantedId: stolen.id,
+    attachmentOrder: state.actionCount || 0
+  };
+  const controllerChanged = targetController !== controller;
+  const enchantedCreature = {
+    ...stolen,
+    controlledByAuraId: aura.id,
+    summoningSickness: controllerChanged ? true : stolen.summoningSickness,
+    attacking: controllerChanged ? false : stolen.attacking,
+    blocking: controllerChanged ? false : stolen.blocking
+  };
+  state[controller].board.push(enchantedCreature);
+  state[controller].board.push(aura);
+  return true;
+};
+const putLandOntoBattlefield = (state, player, land, { countAsLandPlay = false, logAction = null, viaMetamorphose = false } = {}) => {
+  const permanent = preparePermanentForZoneChange(land, { owner: land.owner || player });
+  const entersTapped = ['Lonely Sandbar', 'Remote Isle', 'The Surgical Bay', 'Svyelunite Temple', 'Halimar Depths', 'Mystic Sanctuary'].includes(permanent.name);
+  permanent.tapped = entersTapped;
+
+  if (permanent.name === 'Halimar Depths') {
+    const viewed = [];
+    for (let i = 0; i < 3; i++) {
+      if (state.deck.length) {
+        const seenCard = state.deck.pop();
+        consumeTopKnowledgeCard(state, seenCard);
+        viewed.push(seenCard);
+      }
+    }
+    clearKnownTop(state, getOpponent(player));
+    if (isHumanControlledSeat(state, player)) {
+      setKnownTop(state, player, viewed);
+      state.pendingAction = { type: 'HALIMAR_DEPTHS', player, cards: viewed };
+    } else {
+      const ordered = getAiLibraryOrder(state, player, viewed, getAiPolicyForActor(state, player));
+      ordered.slice().reverse().forEach(card => state.deck.push(card));
+      setKnownTop(state, player, ordered);
+      logAction?.(`${getSeatLabel(player)} reordered the top cards with Halimar Depths.`);
+    }
+  }
+
+  if (permanent.name === 'Mystic Sanctuary') {
+    const islands = state[player].board.filter(card => getLandType(card) === 'Island').length;
+    if (islands >= 3) {
+      permanent.tapped = false;
+      const validSpells = state.graveyard.filter(card => INSTANT_OR_SORCERY_TYPES.some(type => card.type?.includes(type)));
+      if (validSpells.length > 0) {
+        if (isHumanControlledSeat(state, player)) {
+          state.pendingAction = { type: 'MYSTIC_SANCTUARY', player, validTargets: validSpells.map(card => card.id) };
+        } else {
+          const spell = getAiSanctuaryTarget(state, player, validSpells, getAiPolicyForActor(state, player));
+          if (spell) {
+            state.graveyard = state.graveyard.filter(card => card.id !== spell.id);
+            state.deck.push(spell);
+            prependKnownTopCard(state, 'all', spell);
+            logAction?.(`${getSeatLabel(player)} put ${spell.name} on top with Mystic Sanctuary.`);
+          }
+        }
+      }
+    }
+  }
+
+  state[player].board.push(permanent);
+  if (countAsLandPlay) state[player].landsPlayed++;
+  logAction?.(
+    viaMetamorphose
+      ? `${getSeatLabel(player)} put ${permanent.name} onto the battlefield with Metamorphose.`
+      : `${getSeatLabel(player)} played ${permanent.name}.`
+  );
+  return permanent;
+};
+const resolveMetamorphoseDeployment = (state, player, cardId, selectedTargetId = null, logAction = null) => {
+  const handIdx = state[player].hand.findIndex(card => card.id === cardId);
+  if (handIdx < 0) return false;
+  const chosenCard = state[player].hand[handIdx];
+
+  if (chosenCard.name === 'Control Magic') {
+    if (!selectedTargetId) return false;
+    const success = resolveControlMagicBattlefieldEntry(state, player, chosenCard, selectedTargetId);
+    if (!success) return false;
+    state[player].hand.splice(handIdx, 1);
+    removeKnownHandCard(state, player, chosenCard.id);
+    logAction?.(`${getSeatLabel(player)} put Control Magic onto the battlefield with Metamorphose.`);
+    return true;
+  }
+
+  state[player].hand.splice(handIdx, 1);
+  removeKnownHandCard(state, player, chosenCard.id);
+
+  if (chosenCard.isLand) {
+    putLandOntoBattlefield(state, player, chosenCard, { countAsLandPlay: false, logAction, viaMetamorphose: true });
+    return true;
+  }
+
+  if (isCreatureCard(chosenCard)) {
+    state[player].board.push(preparePermanentForZoneChange(chosenCard, { owner: chosenCard.owner || player }));
+    logAction?.(`${getSeatLabel(player)} put ${chosenCard.name} onto the battlefield with Metamorphose.`);
+    return true;
+  }
+
+  return false;
+};
 
 const getUnsubstantiateCreatureCandidates = (state, actor) => {
   const opponent = getOpponent(actor);
@@ -2082,6 +2308,26 @@ export const getAiPendingActions = (state, policy, actor = 'player') => {
     return [{ type: 'SUBMIT_PENDING_ACTION', selectedCardId: spell?.id || null }];
   }
 
+  if (state.pendingAction.type === 'METAMORPHOSE_DEPLOY') {
+    const bestOption = getMetamorphoseDeployOptions(state, actor, policy)
+      .find(option => state.pendingAction.validCards?.includes(option.card.id));
+    return [{
+      type: 'SUBMIT_PENDING_ACTION',
+      selectedCardId: bestOption?.card.id || null,
+      selectedTargetId: bestOption?.targetId || null
+    }];
+  }
+
+  if (state.pendingAction.type === 'METAMORPHOSE_CONTROL_MAGIC') {
+    const target = getControlMagicTargetCandidates(state, actor)
+      .find(candidate => state.pendingAction.validTargets?.includes(candidate.target.id));
+    return [{
+      type: 'SUBMIT_PENDING_ACTION',
+      selectedCardId: state.pendingAction.cardId,
+      selectedTargetId: target?.target.id || null
+    }];
+  }
+
   if (state.pendingAction.type === 'ACTIVATE_LAND') {
     return [{ type: 'SUBMIT_PENDING_ACTION' }];
   }
@@ -2163,11 +2409,6 @@ const chooseHeuristicAiAction = (
       const rescueTarget = getReactiveRescueCreatureCandidates(state, actor, topSpell, policy)[0];
       if (rescueTarget && canCast(unsub) && !shouldMakeMistake(0.06, policy)) {
         return { type: 'CAST_SPELL', player: actor, cardId: unsub.id, target: rescueTarget.target };
-      }
-
-      const rescueMetamorphose = state[actor].hand.find(c => c.name === 'Metamorphose');
-      if (rescueTarget && canCast(rescueMetamorphose) && !shouldMakeMistake(0.08, policy)) {
-        return { type: 'CAST_SPELL', player: actor, cardId: rescueMetamorphose.id, target: rescueTarget.target };
       }
     }
 
@@ -2565,18 +2806,6 @@ const getTacticalActionCandidates = (
       });
     }
 
-    const rescueMetamorphose = state[actor].hand.find(card => card.name === 'Metamorphose' && canCast(card));
-    if (rescueMetamorphose) {
-      enemyStack.forEach((entry) => {
-        getReactiveRescueCreatureCandidates(state, actor, entry, policy).slice(0, 2).forEach(candidate => {
-          addCandidate(
-            { type: 'CAST_SPELL', player: actor, cardId: rescueMetamorphose.id, target: candidate.target },
-            12 + candidate.score
-          );
-        });
-      });
-    }
-
     getStackCardRaceOptions(state, actor, policy, difficulty).slice(0, 3).forEach(option => {
       addCandidate(option.action, 10 + option.score);
     });
@@ -2942,9 +3171,21 @@ const resolveLandActivation = (state, player, cardId, cardName, activation = get
 
   let nextState = state;
   const boardWithoutLand = nextState[player].board.filter(card => card.id !== cardId);
-  const activationPayment = spendMana(boardWithoutLand, getManaPool(nextState, player), activation.total, activation.blue);
-  nextState[player].board = activationPayment.board;
-  nextState.floatingMana[player] = activationPayment.pool;
+  if (cardName === 'The Surgical Bay') {
+    const paidBoard = cloneBoard(boardWithoutLand);
+    const tappedIslands = tapMatchingLands(
+      paidBoard,
+      card => card.isLand && !card.tapped && getLandType(card) === 'Island',
+      2,
+      getLandTapPriority
+    );
+    if (tappedIslands < 2) return state;
+    nextState[player].board = paidBoard;
+  } else {
+    const activationPayment = spendMana(boardWithoutLand, getManaPool(nextState, player), activation.total, activation.blue);
+    nextState[player].board = activationPayment.board;
+    nextState.floatingMana[player] = activationPayment.pool;
+  }
 
   const sacrificedLand = { ...landToActivate, tapped: true, attacking: false, blocking: false };
   nextState.graveyard.push(sacrificedLand);
@@ -2983,7 +3224,10 @@ const defaultEffects = {
 export const createGameReducer = (effects = defaultEffects) => {
   const reducer = (state, action) => {
     let s = { ...state, actionCount: (state.actionCount || 0) + 1 };
-    const logAction = (msg) => { s.log = [msg, ...s.log].slice(0, 15); };
+    const logAction = (msg) => {
+      if (!msg) return;
+      s.log = trimLog([msg, ...(s.log || [])]);
+    };
 
   switch (action.type) {
     case 'RETURN_TO_MENU':
@@ -3002,7 +3246,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         pendingAction: null,
         pendingTargetSelection: null,
         stackResolving: false,
-        log: [`${action.player} surrendered.`, ...(s.log || [])].slice(0, 15)
+        log: trimLog([`${getSeatLabel(action.player)} surrendered.`, ...(s.log || [])])
       };
 
     case 'CLOCK_EXPIRE':
@@ -3012,7 +3256,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         pendingAction: null,
         pendingTargetSelection: null,
         stackResolving: false,
-        log: [`${getSeatLabel(action.player)} ran out of time.`, ...(s.log || [])].slice(0, 15)
+        log: trimLog([`${getSeatLabel(action.player)} ran out of time.`, ...(s.log || [])])
       };
 
     case 'START_GAME':
@@ -3020,6 +3264,8 @@ export const createGameReducer = (effects = defaultEffects) => {
       const gameMode = action.mode || 'player';
       const difficulty = action.difficulty || 'medium';
       const startingDeck = action.deck ? structuredClone(action.deck) : initializeDeck();
+      const startingPlayer = action.startingPlayer === 'ai' ? 'ai' : 'player';
+      const openingRoll = Number.isFinite(action.openingRoll) ? Math.max(1, Math.min(20, Math.round(action.openingRoll))) : null;
       const peerGame = gameMode === 'peer';
       s = { 
          ...initialState, 
@@ -3031,7 +3277,14 @@ export const createGameReducer = (effects = defaultEffects) => {
          deck: startingDeck,
          knowledge: createKnowledgeState(),
          graveyard: [], exile: [], stack: [], log: [], winner: null,
-         phase: gameMode === 'ai_vs_ai' ? 'upkeep' : 'mulligan', turn: 'player', priority: 'player', mulliganCount: 0, peerMulligan: peerGame ? createPeerMulliganState() : null, isFirstTurn: true,
+         phase: gameMode === 'ai_vs_ai' ? 'upkeep' : 'mulligan',
+         turn: startingPlayer,
+         priority: gameMode === 'ai_vs_ai' ? startingPlayer : 'player',
+         mulliganCount: 0,
+         peerMulligan: peerGame ? createPeerMulliganState() : null,
+         isFirstTurn: true,
+         startingPlayer,
+         openingRoll,
          player: { life: 20, hand: [], board: [], landsPlayed: 0 },
          ai: { life: 20, hand: [], board: [], landsPlayed: 0 },
          floatingMana: { player: { total: 0, blue: 0 }, ai: { total: 0, blue: 0 } },
@@ -3040,11 +3293,17 @@ export const createGameReducer = (effects = defaultEffects) => {
          extraTurns: { player: 0, ai: 0 },
          pendingAction: null, pendingTargetSelection: null
       };
-      drawAlternating(s, 'player', 7);
+      drawAlternating(s, startingPlayer, 7);
       const playerAiMulligans = gameMode === 'ai_vs_ai' ? runAiOpeningMulligans(s, 'player') : 0;
       const aiMulligans = peerGame ? 0 : runAiOpeningMulligans(s, 'ai');
       if (gameMode === 'ai_vs_ai' && playerAiMulligans > 0) logAction(`AI South mulliganed to ${7 - playerAiMulligans}.`);
       if (aiMulligans > 0) logAction(`${gameMode === 'ai_vs_ai' ? 'AI North' : 'Opponent'} mulliganed to ${7 - aiMulligans}.`);
+      if (openingRoll) {
+        const starterLabel = gameMode === 'ai_vs_ai'
+          ? (startingPlayer === 'player' ? 'AI South' : 'AI North')
+          : (startingPlayer === 'player' ? 'You' : 'Opponent');
+        logAction(`Opening roll ${openingRoll}: ${starterLabel} will take the first turn.`);
+      }
       logAction(gameMode === 'ai_vs_ai' ? "AI mirror started." : peerGame ? "Friend match started. Both players choose to keep or mulligan." : "Game started. Mulligan phase.");
       return s;
 
@@ -3053,7 +3312,8 @@ export const createGameReducer = (effects = defaultEffects) => {
         const mulliganPlayer = action.player || 'player';
         if (s.phase !== 'mulligan' || s.priority !== mulliganPlayer) return s;
         const mulliganCount = isPeerGame(s) ? getPeerMulliganCount(s, mulliganPlayer) : (s.mulliganCount || 0);
-        if (mulliganCount >= 7) return s;
+        const isFreeMulligan = qualifiesForDandanFreeMulligan(s[mulliganPlayer].hand);
+        if (mulliganCount >= 7 && !isFreeMulligan) return s;
         s.deck = [...s.deck, ...s[mulliganPlayer].hand];
         s[mulliganPlayer].hand = [];
         resetHiddenKnowledge(s);
@@ -3062,12 +3322,21 @@ export const createGameReducer = (effects = defaultEffects) => {
           [s.deck[i], s.deck[j]] = [s.deck[j], s.deck[i]];
         }
         drawCards(s, mulliganPlayer, 7);
+        const nextMulliganCount = mulliganCount + (isFreeMulligan ? 0 : 1);
         if (isPeerGame(s)) {
-          setPeerMulliganCount(s, mulliganPlayer, mulliganCount + 1);
-          logAction(`${getSeatLabel(mulliganPlayer)} mulliganed to ${7 - getPeerMulliganCount(s, mulliganPlayer)}. Draw 7 and choose whether to keep.`);
+          setPeerMulliganCount(s, mulliganPlayer, nextMulliganCount);
+          logAction(
+            isFreeMulligan
+              ? `${getSeatLabel(mulliganPlayer)} took a free Dandan mulligan. Draw 7 and choose whether to keep.`
+              : `${getSeatLabel(mulliganPlayer)} mulliganed to ${7 - getPeerMulliganCount(s, mulliganPlayer)}. Draw 7 and choose whether to keep.`
+          );
         } else {
-          s.mulliganCount = mulliganCount + 1;
-          logAction(`You mulliganed to ${7 - s.mulliganCount}. Draw 7 and choose whether to keep.`);
+          s.mulliganCount = nextMulliganCount;
+          logAction(
+            isFreeMulligan
+              ? `You took a free Dandan mulligan. Draw 7 and choose whether to keep.`
+              : `You mulliganed to ${7 - s.mulliganCount}. Draw 7 and choose whether to keep.`
+          );
         }
         s.pendingAction = null;
         return s;
@@ -3087,7 +3356,7 @@ export const createGameReducer = (effects = defaultEffects) => {
           markPeerSeatKept(s, keepPlayer);
           if (haveBothPeerSeatsKept(s)) {
             s.phase = 'upkeep';
-            s.priority = 'player';
+            s.priority = s.turn;
             logAction(`Both players kept. Beginning Turn 1 Upkeep.`);
           } else {
             s.priority = getOpponent(keepPlayer);
@@ -3096,6 +3365,7 @@ export const createGameReducer = (effects = defaultEffects) => {
           return s;
         }
         s.phase = 'upkeep';
+        s.priority = s.turn;
         logAction(`You kept your hand. Beginning Turn 1 Upkeep.`);
         return s;
       }
@@ -3104,7 +3374,7 @@ export const createGameReducer = (effects = defaultEffects) => {
       if (s.deck.length === 0) { s.winner = action.player === 'player' ? 'ai' : 'player'; return s; }
       drawCards(s, action.player, 1);
       if(action.player === 'player') effects.playDraw();
-      logAction(`${action.player} drew a card for turn.`);
+      logAction(`${getSeatLabel(action.player)} drew a card for turn.`);
       return s;
 
     case 'PLAY_LAND':
@@ -3136,7 +3406,7 @@ export const createGameReducer = (effects = defaultEffects) => {
                 const ordered = getAiLibraryOrder(s, action.player, viewed, getAiPolicyForActor(s, action.player));
                 ordered.slice().reverse().forEach(card => s.deck.push(card));
                 setKnownTop(s, action.player, ordered);
-                logAction(`${action.player === 'player' ? 'Player' : 'AI'} reordered the top cards with Halimar Depths.`);
+                logAction(`${getSeatLabel(action.player)} reordered the top cards with Halimar Depths.`);
             }
         }
         if (land.name === 'Mystic Sanctuary') {
@@ -3153,7 +3423,7 @@ export const createGameReducer = (effects = defaultEffects) => {
                           s.graveyard = s.graveyard.filter(c => c.id !== spell.id);
                           s.deck.push(spell);
                           prependKnownTopCard(s, 'all', spell);
-                          logAction(`${action.player === 'player' ? 'Player' : 'AI'} put ${spell.name} on top with Mystic Sanctuary.`);
+                          logAction(`${getSeatLabel(action.player)} put ${spell.name} on top with Mystic Sanctuary.`);
                         }
                     }
                 }
@@ -3162,7 +3432,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         s[action.player].board.push(land);
         s[action.player].landsPlayed++;
         s.consecutivePasses = 0; 
-        logAction(`${action.player} played ${land.name}.`);
+        logAction(`${getSeatLabel(action.player)} played ${land.name}.`);
       }
       return checkStateBasedActions(s);
 
@@ -3212,15 +3482,25 @@ export const createGameReducer = (effects = defaultEffects) => {
       const [cycledCard] = s[p].hand.splice(handIdx, 1);
       removeKnownHandCard(s, p, cycledCard.id);
       s.graveyard.push(cycledCard);
-      drawCards(s, p, 1);
       s.consecutivePasses = 0;
-      logAction(`${p} cycled ${cycledCard.name}.`);
+      s.stack.push({
+        kind: 'ability',
+        controller: p,
+        card: cycledCard,
+        activation: { total: cyclingCost.total, blue: cyclingCost.blue, effect: 'draw', usesStack: true, source: 'cycling' }
+      });
+      s.priority = getOpponent(p);
+      logAction(`${getSeatLabel(p)} cycled ${cycledCard.name}.`);
       return checkStateBasedActions(s);
     }
 
     case 'ACTIVATE_LAND_NOW':
+      const previousGraveyardCount = s.graveyard.length;
+      const previousStackCount = s.stack.length;
       s = resolveLandActivation(s, action.player, action.cardId, action.cardName, getActivationDetails(action.cardName));
-      logAction(`${action.player} activated ${action.cardName}.`);
+      if (s.graveyard.length > previousGraveyardCount || s.stack.length > previousStackCount) {
+        logAction(`${getSeatLabel(action.player)} activated ${action.cardName}.`);
+      }
       return s;
 
     case 'CANCEL_TARGETING':
@@ -3255,8 +3535,11 @@ export const createGameReducer = (effects = defaultEffects) => {
       else if (!target && card.name === 'Control Magic') {
         target = s[opp].board.find(isCreatureCard) || s[p].board.find(isCreatureCard); 
       }
-      else if (!target && ['Magical Hack', 'Crystal Spray', 'Metamorphose'].includes(card.name)) {
-        target = s[opp].board.find(c => c.name === 'DandÃ¢n') || s[opp].board.find(c => c.isLand) || s[p].board.find(c => c.isLand);
+      else if (!target && ['Magical Hack', 'Crystal Spray'].includes(card.name)) {
+        target = s[opp].board.find(c => c.name === 'DandÃ¢n') || s[opp].board.find(c => c.isLand) || s[p].board.find(c => c.isLand) || getTopSpellOnStack(s.stack);
+      }
+      else if (!target && card.name === 'Metamorphose') {
+        target = s[opp].board.find(c => c.name === 'DandÃ¢n') || s[opp].board.find(c => c.name === 'Control Magic') || s[opp].board.find(c => c.isLand);
       }
       if (targetDependent.includes(card.name) && !target) return s;
       if (isHumanControlledPlayer && isLandTypeChoiceSpell(card.name) && !isLandTypeChoice(action.landTypeChoice)) {
@@ -3265,7 +3548,8 @@ export const createGameReducer = (effects = defaultEffects) => {
           player: p,
           cardId: action.cardId,
           spellName: card.name,
-          targetId: target.id,
+          targetId: target.card ? target.card.id : target.id,
+          targetZone: target.card ? 'stack' : 'board',
           targetName: target.card ? target.card.name : target.name
         };
         return s;
@@ -3283,7 +3567,7 @@ export const createGameReducer = (effects = defaultEffects) => {
       removeKnownHandCard(s, p, card.id);
       s.stack.push({ card, controller: p, target, landTypeChoice });
       s.consecutivePasses = 0; s.priority = p === 'player' ? 'ai' : 'player'; 
-      logAction(`${p} casts ${card.name}.`);
+      logAction(buildCastLogMessage(s, p, card, target, landTypeChoice));
       return s;
     }
 
@@ -3305,7 +3589,8 @@ export const createGameReducer = (effects = defaultEffects) => {
           player: p,
           cardId,
           spellName: card.name,
-          targetId: targetObj.id,
+          targetId: targetObj.card ? targetObj.card.id : targetObj.id,
+          targetZone: action.targetZone === 'stack' ? 'stack' : 'board',
           targetName: targetObj.card ? targetObj.card.name : targetObj.name
         };
         return s;
@@ -3323,7 +3608,7 @@ export const createGameReducer = (effects = defaultEffects) => {
       s.pendingTargetSelection = null;
       s.consecutivePasses = 0;
       s.priority = getOpponent(p);
-      logAction(`${getSeatLabel(p)} cast ${card.name} targeting ${targetObj ? (targetObj.card ? targetObj.card.name : targetObj.name) : 'something'}.`);
+      logAction(buildCastLogMessage(s, p, card, targetObj, null));
       return s;
     }
 
@@ -3370,26 +3655,48 @@ export const createGameReducer = (effects = defaultEffects) => {
            const targetIdx = s.stack.findIndex(st => st.card.id === spell.target.card.id);
            if (targetIdx > -1) {
              const [countered] = s.stack.splice(targetIdx, 1);
-             s.deck.push(countered.card);
-             prependKnownTopCard(s, 'all', countered.card);
-             logAction(`${countered.card.name} was Memory Lapsed to top of library!`);
+             const returnedSpell = prepareCardForZoneChange(countered.card, { owner: countered.card.owner || countered.controller });
+             s.deck.push(returnedSpell);
+             prependKnownTopCard(s, 'all', returnedSpell);
+             logAction(`${returnedSpell.name} was Memory Lapsed to top of library!`);
            }
         }
         s.graveyard.push(spell.card);
       }
       else if (spell.card.name === 'Metamorphose') {
         if (spell.target) {
-            let found = false;
+            let bounced = null;
+            let targetController = null;
             ['player', 'ai'].forEach(p2 => {
+                if (bounced) return;
                 const targetIdx = s[p2].board.findIndex(c => c.id === spell.target.id);
                 if (targetIdx > -1) {
-                    const [bounced] = s[p2].board.splice(targetIdx, 1);
-                    s.deck.push(preparePermanentForZoneChange(bounced));
-                    prependKnownTopCard(s, 'all', bounced);
-                    logAction(`Metamorphose put ${bounced.name} on top of the library!`);
-                    found = true;
+                    targetController = p2;
+                    [bounced] = s[p2].board.splice(targetIdx, 1);
                 }
             });
+            if (bounced) {
+              const owner = bounced.owner || targetController;
+              const resetPermanent = preparePermanentForZoneChange(bounced, { owner });
+              s.deck.push(resetPermanent);
+              prependKnownTopCard(s, 'all', resetPermanent);
+              logAction(`Metamorphose put ${bounced.name} on top of the library!`);
+              const deployOptions = getMetamorphoseDeployOptions(s, owner, getAiPolicyForActor(s, owner));
+              s.graveyard.push(spell.card);
+              if (deployOptions.length > 0) {
+                if (isHumanControlledSeat(s, owner)) {
+                  s.pendingAction = { type: 'METAMORPHOSE_DEPLOY', player: owner, validCards: deployOptions.map(option => option.card.id) };
+                  s.stackResolving = false;
+                  return s;
+                }
+                resolveMetamorphoseDeployment(s, owner, deployOptions[0].card.id, deployOptions[0].targetId, logAction);
+              }
+              s = checkStateBasedActions(s);
+              s.stackResolving = false;
+              s.priority = s.turn;
+              s.consecutivePasses = 0;
+              return s;
+            }
         }
         s.graveyard.push(spell.card);
       }
@@ -3399,8 +3706,9 @@ export const createGameReducer = (effects = defaultEffects) => {
           if (stackIdx > -1) {
              const [bounced] = s.stack.splice(stackIdx, 1); 
              const owner = bounced.card.owner || bounced.controller;
-             s[owner].hand.push(bounced.card);
-             KNOWLEDGE_PLAYERS.forEach(viewer => addKnownHandCard(s, viewer, owner, bounced.card));
+             const returnedSpell = prepareCardForZoneChange(bounced.card, { owner });
+             s[owner].hand.push(returnedSpell);
+             KNOWLEDGE_PLAYERS.forEach(viewer => addKnownHandCard(s, viewer, owner, returnedSpell));
              logAction(`Unsubstantiate returned spell to owner's hand.`);
           } else {
             ['player', 'ai'].forEach(p2 => {
@@ -3420,34 +3728,53 @@ export const createGameReducer = (effects = defaultEffects) => {
       }
       else if (['Magical Hack', 'Crystal Spray'].includes(spell.card.name)) {
         if (spell.target) {
-            let targetPlayer = null;
-            let targetIdx = s.player.board.findIndex(c => c.id === spell.target.id);
-            if (targetIdx > -1) targetPlayer = 'player';
-            else {
-                targetIdx = s.ai.board.findIndex(c => c.id === spell.target.id);
-                if (targetIdx > -1) targetPlayer = 'ai';
-            }
-            
-            if (targetPlayer) {
-                const targetObj = s[targetPlayer].board[targetIdx];
-                const landTypeChoice = isLandTypeChoice(spell.landTypeChoice)
-                  ? spell.landTypeChoice
-                  : chooseLandTypeForTransformTarget(s, spell.controller, targetObj);
-                if (targetObj.name === DANDAN_NAME) {
-                    logAction(`${spell.card.name} changes DandÃ¢n's land dependency to ${landTypeChoice}.`);
-                    s[targetPlayer].board[targetIdx] = applyLandTypeChoiceToCard(
-                      targetObj,
-                      landTypeChoice,
-                      spell.card.name === 'Crystal Spray' ? 'endOfTurn' : 'permanent'
-                    );
-                } else if (targetObj.isLand) {
-                    logAction(`${spell.card.name} changes the land type to ${landTypeChoice}.`);
-                    s[targetPlayer].board[targetIdx] = applyLandTypeChoiceToCard(
-                      targetObj,
-                      landTypeChoice,
-                      spell.card.name === 'Crystal Spray' ? 'endOfTurn' : 'permanent'
-                    );
-                }
+            const stackIdx = isSpellStackEntry(spell.target)
+              ? s.stack.findIndex(entry => entry.card.id === spell.target.card?.id)
+              : -1;
+            if (stackIdx > -1) {
+              const targetEntry = s.stack[stackIdx];
+              const landTypeChoice = isLandTypeChoice(spell.landTypeChoice)
+                ? spell.landTypeChoice
+                : chooseLandTypeForTransformTarget(s, spell.controller, targetEntry.card);
+              s.stack[stackIdx] = {
+                ...targetEntry,
+                card: applyLandTypeChoiceToCard(
+                  targetEntry.card,
+                  landTypeChoice,
+                  spell.card.name === 'Crystal Spray' ? 'endOfTurn' : 'permanent'
+                )
+              };
+              logAction(`${spell.card.name} changes ${targetEntry.card.name} on the stack to ${landTypeChoice}.`);
+            } else {
+              let targetPlayer = null;
+              let targetIdx = s.player.board.findIndex(c => c.id === spell.target.id);
+              if (targetIdx > -1) targetPlayer = 'player';
+              else {
+                  targetIdx = s.ai.board.findIndex(c => c.id === spell.target.id);
+                  if (targetIdx > -1) targetPlayer = 'ai';
+              }
+              
+              if (targetPlayer) {
+                  const targetObj = s[targetPlayer].board[targetIdx];
+                  const landTypeChoice = isLandTypeChoice(spell.landTypeChoice)
+                    ? spell.landTypeChoice
+                    : chooseLandTypeForTransformTarget(s, spell.controller, targetObj);
+                  if (targetObj.name === DANDAN_NAME) {
+                      logAction(`${spell.card.name} changes DandÃ¢n's land dependency to ${landTypeChoice}.`);
+                      s[targetPlayer].board[targetIdx] = applyLandTypeChoiceToCard(
+                        targetObj,
+                        landTypeChoice,
+                        spell.card.name === 'Crystal Spray' ? 'endOfTurn' : 'permanent'
+                      );
+                  } else if (targetObj.isLand) {
+                      logAction(`${spell.card.name} changes the land type to ${landTypeChoice}.`);
+                      s[targetPlayer].board[targetIdx] = applyLandTypeChoiceToCard(
+                        targetObj,
+                        landTypeChoice,
+                        spell.card.name === 'Crystal Spray' ? 'endOfTurn' : 'permanent'
+                      );
+                  }
+              }
             }
         }
         if (spell.card.name === 'Crystal Spray') drawCards(s, spell.controller, 1);
@@ -3526,6 +3853,7 @@ export const createGameReducer = (effects = defaultEffects) => {
             if (milled) {
                 consumeTopKnowledgeCard(s, milled);
                 s.graveyard.push(milled);
+                logAction(`${getSeatLabel(spell.controller)} named ${guess} for Predict. Predict milled ${milled.name}.`);
                 if(milled.name === guess) { drawCards(s, spell.controller, 2); } 
                 else { drawCards(s, spell.controller, 1); }
             }
@@ -3535,7 +3863,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         const akCount = s.graveyard.filter(c => c.name === 'Accumulated Knowledge').length;
         s.graveyard.push(spell.card);
         drawCards(s, spell.controller, 1 + akCount);
-        logAction(`${spell.controller} drew ${1+akCount} cards from AK.`);
+        logAction(`${getSeatLabel(spell.controller)} drew ${1 + akCount} cards from AK.`);
       }
       else if (spell.card.name === 'Mental Note') {
         s.graveyard.push(spell.card);
@@ -3576,44 +3904,11 @@ export const createGameReducer = (effects = defaultEffects) => {
       else if (spell.card.name === 'Capture of Jingzhou') {
         s.graveyard.push(spell.card);
         s.extraTurns[spell.controller] = (s.extraTurns[spell.controller] || 0) + 1;
-        logAction(`${spell.controller} takes an extra turn!`);
+        logAction(`${getSeatLabel(spell.controller)} takes an extra turn!`);
       }
       else if (spell.card.name === 'Control Magic') {
-        if (spell.target) {
-            let targetController = null;
-            let targetIdx = -1;
-            ['player', 'ai'].forEach(p2 => {
-              if (targetIdx > -1) return;
-              const foundIdx = s[p2].board.findIndex(c => c.id === spell.target.id && isCreatureCard(c));
-              if (foundIdx > -1) {
-                targetController = p2;
-                targetIdx = foundIdx;
-              }
-            });
-
-            if (targetController && targetIdx > -1) {
-                const [stolen] = s[targetController].board.splice(targetIdx, 1);
-                const aura = {
-                  ...clearAttachmentState(spell.card),
-                  owner: spell.card.owner || spell.controller,
-                  summoningSickness: false,
-                  enchantedId: stolen.id,
-                  attachmentOrder: s.actionCount || 0
-                };
-                const controllerChanged = targetController !== spell.controller;
-                const enchantedCreature = {
-                  ...stolen,
-                  controlledByAuraId: aura.id,
-                  summoningSickness: controllerChanged ? true : stolen.summoningSickness,
-                  attacking: controllerChanged ? false : stolen.attacking,
-                  blocking: controllerChanged ? false : stolen.blocking
-                };
-                s[spell.controller].board.push(enchantedCreature);
-                s[spell.controller].board.push(aura);
-                logAction(`${spell.controller} resolved Control Magic.`);
-            } else {
-                s.graveyard.push(clearAttachmentState(spell.card));
-            }
+        if (spell.target && resolveControlMagicBattlefieldEntry(s, spell.controller, spell.card, spell.target.id)) {
+            logAction(`${getSeatLabel(spell.controller)} resolved Control Magic.`);
         } else {
             s.graveyard.push(clearAttachmentState(spell.card));
         }
@@ -3645,12 +3940,14 @@ export const createGameReducer = (effects = defaultEffects) => {
     case 'SUBMIT_PENDING_ACTION':
        const pendingPlayer = s.pendingAction.player || 'player';
        if (s.pendingAction.type === 'LAND_TYPE_CHOICE') {
-           const handIdx = s[pendingPlayer].hand.findIndex(c => c.id === s.pendingAction.cardId);
-           const targetObj = s.player.board.find(c => c.id === s.pendingAction.targetId) || s.ai.board.find(c => c.id === s.pendingAction.targetId) || null;
-           const chosenLandType = isLandTypeChoice(action.landTypeChoice) ? action.landTypeChoice : null;
-           if (handIdx === -1 || !targetObj || !chosenLandType) {
-             s.pendingAction = null;
-             return s;
+            const handIdx = s[pendingPlayer].hand.findIndex(c => c.id === s.pendingAction.cardId);
+            const targetObj = s.pendingAction.targetZone === 'stack'
+              ? s.stack.find(entry => entry.card.id === s.pendingAction.targetId) || null
+              : s.player.board.find(c => c.id === s.pendingAction.targetId) || s.ai.board.find(c => c.id === s.pendingAction.targetId) || null;
+            const chosenLandType = isLandTypeChoice(action.landTypeChoice) ? action.landTypeChoice : null;
+            if (handIdx === -1 || !targetObj || !chosenLandType) {
+              s.pendingAction = null;
+              return s;
            }
 
            const card = s[pendingPlayer].hand[handIdx];
@@ -3661,17 +3958,17 @@ export const createGameReducer = (effects = defaultEffects) => {
 
            effects.playCast();
            const castPayment = spendMana(s[pendingPlayer].board, getManaPool(s, pendingPlayer), card.cost, card.blueRequirement || 0);
-           s[pendingPlayer].board = castPayment.board;
-           s.floatingMana[pendingPlayer] = castPayment.pool;
-           s[pendingPlayer].hand.splice(handIdx, 1);
-           removeKnownHandCard(s, pendingPlayer, card.id);
-           s.stack.push({ card, controller: pendingPlayer, target: targetObj, landTypeChoice: chosenLandType });
-           s.pendingAction = null;
-           s.consecutivePasses = 0;
-           s.priority = getOpponent(pendingPlayer);
-           logAction(`${getSeatLabel(pendingPlayer)} cast ${card.name} targeting ${targetObj.name}, choosing ${chosenLandType}.`);
+            s[pendingPlayer].board = castPayment.board;
+            s.floatingMana[pendingPlayer] = castPayment.pool;
+            s[pendingPlayer].hand.splice(handIdx, 1);
+            removeKnownHandCard(s, pendingPlayer, card.id);
+            s.stack.push({ card, controller: pendingPlayer, target: targetObj, landTypeChoice: chosenLandType });
+            s.pendingAction = null;
+            s.consecutivePasses = 0;
+            s.priority = getOpponent(pendingPlayer);
+           logAction(buildCastLogMessage(s, pendingPlayer, card, targetObj, chosenLandType));
            return s;
-       } else if (s.pendingAction.type === 'BRAINSTORM') {
+        } else if (s.pendingAction.type === 'BRAINSTORM') {
            const putBackCards = [];
            s.pendingAction.selected.forEach(cardId => {
                const idx = s[pendingPlayer].hand.findIndex(c => c.id === cardId);
@@ -3696,12 +3993,12 @@ export const createGameReducer = (effects = defaultEffects) => {
                }
            });
            logAction(`${getSeatLabel(pendingPlayer)} discarded a card.`);
-       } else if (s.pendingAction.type === 'PREDICT') {
+        } else if (s.pendingAction.type === 'PREDICT') {
            if(s.deck.length) {
                const milled = s.deck.pop();
                consumeTopKnowledgeCard(s, milled);
                s.graveyard.push(milled);
-               logAction(`Predict milled: ${milled.name}.`);
+               logAction(`${getSeatLabel(pendingPlayer)} named ${action.guess || 'a card'} for Predict. Predict milled ${milled.name}.`);
                if(milled.name === action.guess) { drawCards(s, pendingPlayer, 2); } 
                else { drawCards(s, pendingPlayer, 1); }
            }
@@ -3721,7 +4018,7 @@ export const createGameReducer = (effects = defaultEffects) => {
            clearKnownTop(s, getOpponent(pendingPlayer));
            setKnownTop(s, pendingPlayer, s.pendingAction.cards);
            logAction(`${getSeatLabel(pendingPlayer)} reordered the top of the library.`);
-       } else if (s.pendingAction.type === 'MULLIGAN_BOTTOM') {
+        } else if (s.pendingAction.type === 'MULLIGAN_BOTTOM') {
            s.pendingAction.selected.forEach(cardId => {
                const idx = s[pendingPlayer].hand.findIndex(c => c.id === cardId);
                if(idx > -1) {
@@ -3735,14 +4032,15 @@ export const createGameReducer = (effects = defaultEffects) => {
              markPeerSeatKept(s, pendingPlayer);
              if (haveBothPeerSeatsKept(s)) {
                s.phase = 'upkeep';
-               s.priority = 'player';
+               s.priority = s.turn;
              } else {
                s.priority = getOpponent(pendingPlayer);
              }
            } else {
              s.phase = 'upkeep';
+             s.priority = s.turn;
            }
-         } else if (s.pendingAction.type === 'DISCARD_CLEANUP') {
+          } else if (s.pendingAction.type === 'DISCARD_CLEANUP') {
             s.pendingAction.selected.forEach(cardId => {
                 const idx = s[pendingPlayer].hand.findIndex(c => c.id === cardId);
                 if(idx > -1) {
@@ -3759,11 +4057,41 @@ export const createGameReducer = (effects = defaultEffects) => {
              s = resolveLandActivation(s, targetPlayer, s.pendingAction.cardId, s.pendingAction.cardName, s.pendingAction.activation || getActivationDetails(s.pendingAction.cardName));
              s.pendingAction = null;
              return s;
-         } else if (s.pendingAction.type === 'HAND_LAND_ACTION') {
+          } else if (s.pendingAction.type === 'HAND_LAND_ACTION') {
+              s.pendingAction = null;
+          } else if (s.pendingAction.type === 'METAMORPHOSE_DEPLOY') {
+             if (action.selectedCardId) {
+                const chosenCard = s[pendingPlayer].hand.find(card => card.id === action.selectedCardId);
+                if (chosenCard?.name === 'Control Magic') {
+                  const validTargets = getControlMagicTargetCandidates(s, pendingPlayer).map(candidate => candidate.target.id);
+                  if (validTargets.length > 0 && !action.selectedTargetId) {
+                    s.pendingAction = {
+                      type: 'METAMORPHOSE_CONTROL_MAGIC',
+                      player: pendingPlayer,
+                      cardId: chosenCard.id,
+                      validTargets
+                    };
+                    return s;
+                  }
+                }
+                s.pendingAction = null;
+                resolveMetamorphoseDeployment(s, pendingPlayer, action.selectedCardId, action.selectedTargetId || null, logAction);
+                if (s.pendingAction) return s;
+             } else {
+                s.pendingAction = null;
+                logAction(`${getSeatLabel(pendingPlayer)} chose not to put a permanent onto the battlefield with Metamorphose.`);
+             }
+          } else if (s.pendingAction.type === 'METAMORPHOSE_CONTROL_MAGIC') {
+             const controlMagicCardId = s.pendingAction.cardId;
              s.pendingAction = null;
-         } else if (s.pendingAction.type === 'MYSTIC_SANCTUARY') {
-            if (action.selectedCardId) {
-               const targetIdx = s.graveyard.findIndex(c => c.id === action.selectedCardId);
+             if (action.selectedTargetId) {
+               resolveMetamorphoseDeployment(s, pendingPlayer, controlMagicCardId, action.selectedTargetId, logAction);
+             } else {
+               logAction(`${getSeatLabel(pendingPlayer)} chose not to put Control Magic onto the battlefield with Metamorphose.`);
+             }
+          } else if (s.pendingAction.type === 'MYSTIC_SANCTUARY') {
+             if (action.selectedCardId) {
+                const targetIdx = s.graveyard.findIndex(c => c.id === action.selectedCardId);
                if (targetIdx > -1) {
                    const [spell] = s.graveyard.splice(targetIdx, 1);
                    s.deck.push(spell);
@@ -3822,7 +4150,7 @@ export const createGameReducer = (effects = defaultEffects) => {
         
         if (unblocked > 0) {
           s[defender].life -= unblocked * 4; 
-          logAction(`${attacker} deals ${unblocked * 4} damage!`);
+          logAction(`${getSeatLabel(attacker)} deals ${unblocked * 4} damage!`);
         }
         
         if (deadAttackers.length > 0) {
@@ -3878,7 +4206,7 @@ export const createGameReducer = (effects = defaultEffects) => {
       s.ai.board = expireTemporaryTextChanges(s.ai.board);
       if (s.extraTurns[s.turn] > 0) {
           s.extraTurns[s.turn]--;
-          logAction(`-- ${s.turn}'s Extra Turn! --`);
+          logAction(`-- ${getSeatLabel(s.turn)} gets an extra turn! --`);
       } else {
           s.turn = s.turn === 'player' ? 'ai' : 'player';
       }
