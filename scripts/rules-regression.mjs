@@ -566,6 +566,65 @@ test('AI Predict does not cheat on an unknown top card', () => {
   expect(state.graveyard.some((card) => card.id === topCard.id), 'Predict still needs to mill the top card');
 });
 
+test('Chart a Course loses the game if the second draw is from an empty shared library', () => {
+  const chart = makeCard(CARDS.CHART, { id: 'chart-empty-loss', owner: 'ai' });
+  const lastCard = makeCard(CARDS.ISLAND_1, { id: 'chart-empty-last', owner: 'ai' });
+
+  let state = makeState({
+    turn: 'ai',
+    phase: 'main2',
+    priority: null,
+    stackResolving: true,
+    deck: [lastCard],
+    stack: [{ card: chart, controller: 'ai', target: null }],
+    ai: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    },
+    player: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'RESOLVE_TOP_STACK' });
+
+  expect(state.winner === 'player', `drawing from an empty shared library should make the drawer lose, got winner ${state.winner}`);
+  expect(state.ai.hand.some((card) => card.id === lastCard.id), 'Chart a Course should still draw the last available card before the losing draw attempt');
+  expect(state.pendingAction === null, 'Chart a Course should not open a discard prompt after a lethal empty-library draw');
+});
+
+test('turn draw from an empty shared library immediately ends the game', () => {
+  let state = makeState({
+    turn: 'player',
+    phase: 'upkeep',
+    priority: 'player',
+    isFirstTurn: false,
+    deck: [],
+    player: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    },
+    ai: {
+      life: 20,
+      hand: [],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+
+  state = reducer(state, { type: 'NEXT_PHASE' });
+
+  expect(state.winner === 'ai', `player should lose on the empty-library draw step, got winner ${state.winner}`);
+  expect(state.phase === 'upkeep', `game flow should stop before advancing to main1, got phase ${state.phase}`);
+});
+
 test('Surgical Bay needs two other untapped Islands to activate', () => {
   const surgicalBay = makeCard(CARDS.SURGICAL_BAY, { id: 'bay-needs-two' });
   const island = makeCard(CARDS.ISLAND_1, { id: 'bay-needs-two-island' });

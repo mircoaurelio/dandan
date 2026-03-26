@@ -879,24 +879,32 @@ const restoreSavedGameState = (snapshot) => {
   };
 };
 const untapBoard = (board) => board.map(c => ({ ...c, tapped: false, summoningSickness: false, attacking: false, blocking: false }));
+const loseForEmptyLibraryDraw = (state, player) => {
+  if (state.winner) return false;
+  state.winner = getOpponent(player);
+  state.log = trimLog([`${getSeatLabel(player)} tried to draw from the empty shared library and lost the game.`, ...(state.log || [])]);
+  return false;
+};
 
 const drawCards = (s, player, count) => {
   for(let i=0; i<count; i++) {
-     if(s.deck.length > 0) {
-        const c = s.deck.pop();
-        consumeTopKnowledgeOnDraw(s, player, c);
-        c.owner = player; // Track owner for Unsubstantiate/Metamorphose bounces!
-        s[player].hand.push(c);
-     }
+     if (s.winner) return false;
+     if (s.deck.length === 0) return loseForEmptyLibraryDraw(s, player);
+     const c = s.deck.pop();
+     consumeTopKnowledgeOnDraw(s, player, c);
+     c.owner = player; // Track owner for Unsubstantiate/Metamorphose bounces!
+     s[player].hand.push(c);
   }
+  return true;
 };
 
 const drawAlternating = (s, firstPlayer, count) => {
   const secondPlayer = firstPlayer === 'player' ? 'ai' : 'player';
   for (let i = 0; i < count; i++) {
-    drawCards(s, firstPlayer, 1);
-    drawCards(s, secondPlayer, 1);
+    if (!drawCards(s, firstPlayer, 1)) return false;
+    if (!drawCards(s, secondPlayer, 1)) return false;
   }
+  return true;
 };
 
 const syncControlEffects = (state) => {
@@ -3371,10 +3379,9 @@ export const createGameReducer = (effects = defaultEffects) => {
       }
 
     case 'DRAW':
-      if (s.deck.length === 0) { s.winner = action.player === 'player' ? 'ai' : 'player'; return s; }
       drawCards(s, action.player, 1);
-      if(action.player === 'player') effects.playDraw();
-      logAction(`${getSeatLabel(action.player)} drew a card for turn.`);
+      if (!s.winner && action.player === 'player') effects.playDraw();
+      if (!s.winner) logAction(`${getSeatLabel(action.player)} drew a card for turn.`);
       return s;
 
     case 'PLAY_LAND':
@@ -3783,6 +3790,13 @@ export const createGameReducer = (effects = defaultEffects) => {
       else if (spell.card.name === 'Brainstorm') {
         s.graveyard.push(spell.card);
         drawCards(s, spell.controller, 3);
+        if (s.winner) {
+          s = checkStateBasedActions(s);
+          s.stackResolving = false;
+          s.priority = s.turn;
+          s.consecutivePasses = 0;
+          return s;
+        }
         clearKnownTop(s, getOpponent(spell.controller));
         forgetPrivateHandInfoFromOpponent(s, spell.controller);
         if (isHumanControlledSeat(s, spell.controller)) {
@@ -3802,6 +3816,13 @@ export const createGameReducer = (effects = defaultEffects) => {
       else if (spell.card.name === 'Chart a Course') {
         s.graveyard.push(spell.card);
         drawCards(s, spell.controller, 2);
+        if (s.winner) {
+          s = checkStateBasedActions(s);
+          s.stackResolving = false;
+          s.priority = s.turn;
+          s.consecutivePasses = 0;
+          return s;
+        }
         if (!s.hasAttacked[spell.controller]) {
             if (isHumanControlledSeat(s, spell.controller)) {
                 s.pendingAction = { type: 'DISCARD', player: spell.controller, count: 1, selected: [] };
@@ -3863,6 +3884,13 @@ export const createGameReducer = (effects = defaultEffects) => {
         const akCount = s.graveyard.filter(c => c.name === 'Accumulated Knowledge').length;
         s.graveyard.push(spell.card);
         drawCards(s, spell.controller, 1 + akCount);
+        if (s.winner) {
+          s = checkStateBasedActions(s);
+          s.stackResolving = false;
+          s.priority = s.turn;
+          s.consecutivePasses = 0;
+          return s;
+        }
         logAction(`${getSeatLabel(spell.controller)} drew ${1 + akCount} cards from AK.`);
       }
       else if (spell.card.name === 'Mental Note') {
@@ -3887,6 +3915,13 @@ export const createGameReducer = (effects = defaultEffects) => {
             [s.deck[i], s.deck[j]] = [s.deck[j], s.deck[i]];
         }
         drawAlternating(s, s.turn, 7);
+        if (s.winner) {
+          s = checkStateBasedActions(s);
+          s.stackResolving = false;
+          s.priority = s.turn;
+          s.consecutivePasses = 0;
+          return s;
+        }
         if (endsTurn) {
             s.exile.push(spell.card);
             logAction(`Day's Undoing resets hands and graveyard, then is exiled.`);
@@ -4122,6 +4157,7 @@ export const createGameReducer = (effects = defaultEffects) => {
              s.isFirstTurn = false; 
           } else {
                s = reducer(s, { type: 'DRAW', player: s.turn }); 
+               if (s.winner) return s;
            }
           s.phase = 'main1'; s.priority = s.turn;
       } else if (s.phase === 'main1') {
