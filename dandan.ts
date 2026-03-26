@@ -358,6 +358,194 @@ const PolicyOverlay = ({ policyKey, onClose }) => {
   );
 };
 
+const WhatIsThisOverlay = ({ onClose }) => {
+  const [voiceState, setVoiceState] = useState('idle');
+  const [voiceName, setVoiceName] = useState('System voice');
+  const utteranceRef = useRef(null);
+
+  const stopNarration = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      setVoiceState('idle');
+      return;
+    }
+    window.speechSynthesis.cancel();
+    utteranceRef.current = null;
+    setVoiceState('idle');
+  };
+
+  const playNarration = () => {
+    if (
+      typeof window === 'undefined' ||
+      !('speechSynthesis' in window) ||
+      typeof SpeechSynthesisUtterance === 'undefined'
+    ) {
+      setVoiceState('unavailable');
+      return;
+    }
+
+    const synthesis = window.speechSynthesis;
+    const utterance = new SpeechSynthesisUtterance(WHAT_IS_THIS_CONTENT.narration);
+    const voice = pickNarrationVoice(synthesis.getVoices());
+
+    if (voice) {
+      utterance.voice = voice;
+      setVoiceName(voice.name || 'System voice');
+    } else {
+      setVoiceName('System voice');
+    }
+
+    utterance.rate = 0.95;
+    utterance.pitch = 0.96;
+    utterance.volume = 1;
+    utterance.onstart = () => setVoiceState('speaking');
+    utterance.onend = () => {
+      utteranceRef.current = null;
+      setVoiceState('idle');
+    };
+    utterance.onerror = () => {
+      utteranceRef.current = null;
+      setVoiceState('idle');
+    };
+
+    utteranceRef.current = utterance;
+    setVoiceState('loading');
+    synthesis.cancel();
+    synthesis.speak(utterance);
+  };
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      !('speechSynthesis' in window) ||
+      typeof SpeechSynthesisUtterance === 'undefined'
+    ) {
+      setVoiceState('unavailable');
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      playNarration();
+    }, 140);
+
+    return () => {
+      window.clearTimeout(timer);
+      stopNarration();
+    };
+  }, []);
+
+  const handleClose = () => {
+    stopNarration();
+    onClose();
+  };
+
+  const voiceLabel = voiceState === 'speaking'
+    ? `Speaking with ${voiceName}`
+    : voiceState === 'loading'
+      ? 'Preparing narration'
+    : voiceState === 'unavailable'
+      ? 'Voice narration depends on browser speech synthesis'
+      : `Ready with ${voiceName}`;
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-start justify-center overflow-y-auto bg-[rgba(2,6,23,0.84)] p-4 backdrop-blur-sm sm:p-6">
+      <div className="my-auto w-full max-w-2xl rounded-[1.9rem] border border-white/10 bg-slate-950/96 p-5 text-left shadow-[0_30px_80px_rgba(2,6,23,0.72)] sm:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2 className="font-arena-display text-2xl tracking-[0.08em] text-white sm:text-[2rem]">{WHAT_IS_THIS_CONTENT.title}</h2>
+            <div className="mt-2 text-[10px] uppercase tracking-[0.22em] text-slate-300/78">{WHAT_IS_THIS_CONTENT.subtitle}</div>
+          </div>
+          <button onClick={handleClose} className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-900 border border-slate-700 text-slate-400 transition-all hover:bg-slate-800 hover:text-white">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="mb-5 rounded-[1.35rem] border border-cyan-200/14 bg-cyan-400/[0.06] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-arena-display text-[1.05rem] tracking-[0.05em] text-cyan-100">Voice</div>
+              <div className="mt-2 text-xs uppercase tracking-[0.18em] text-cyan-50/72">{voiceLabel}</div>
+            </div>
+            <button
+              onClick={voiceState === 'speaking' ? stopNarration : playNarration}
+              className="inline-flex min-h-[46px] items-center justify-center gap-2 rounded-2xl border border-sky-200/70 bg-[#38bdf8] px-4 py-2.5 font-bold uppercase tracking-[0.04em] text-slate-950 shadow-[0_14px_28px_rgba(56,189,248,0.22)] transition-colors hover:bg-[#22c7ff]"
+            >
+              {voiceState === 'speaking' ? <VolumeX size={16} /> : <Volume2 size={16} />}
+              {voiceState === 'speaking' ? 'Stop Voice' : 'Play Voice'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-5 rounded-[1.35rem] border border-white/10 bg-white/[0.04] p-4">
+          <div className="font-arena-display text-[1.05rem] tracking-[0.05em] text-cyan-100">The Format At A Glance</div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div className="rounded-[1rem] border border-slate-800 bg-slate-900/70 p-3">
+              <div className="flex items-center gap-2 text-cyan-100">
+                <Layers size={15} />
+                <span className="text-[11px] font-black uppercase tracking-[0.18em]">Shared Library</span>
+              </div>
+              <p className="mt-2 text-sm leading-5 text-slate-300">Both players draw from the same deck, so the top card is a shared resource.</p>
+            </div>
+            <div className="rounded-[1rem] border border-slate-800 bg-slate-900/70 p-3">
+              <div className="flex items-center gap-2 text-cyan-100">
+                <Skull size={15} />
+                <span className="text-[11px] font-black uppercase tracking-[0.18em]">Shared Graveyard</span>
+              </div>
+              <p className="mt-2 text-sm leading-5 text-slate-300">Cards in the graveyard matter to everyone, especially draw spells and recursion.</p>
+            </div>
+            <div className="rounded-[1rem] border border-slate-800 bg-slate-900/70 p-3">
+              <div className="flex items-center gap-2 text-cyan-100">
+                <ArrowLeftRight size={15} />
+                <span className="text-[11px] font-black uppercase tracking-[0.18em]">One Small Card Pool</span>
+              </div>
+              <p className="mt-2 text-sm leading-5 text-slate-300">That small pool is why this is a good MTG AI lab: fewer cards, sharper decisions.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-5 rounded-[1.35rem] border border-white/10 bg-white/[0.04] p-4">
+          <div className="font-arena-display text-[1.05rem] tracking-[0.05em] text-cyan-100">The Format In Cards</div>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            These are the cards that explain the soul of Dandan: one fish, one shared library, and a lot of fights over what both players will draw next.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {WHAT_IS_THIS_CARD_SPOTLIGHTS.map((spotlight) => (
+              <div key={spotlight.key} className="rounded-[1.2rem] border border-slate-800 bg-slate-900/72 p-3">
+                <div className="flex items-start gap-3">
+                  <Card
+                    card={spotlight.card}
+                    zone="dialog"
+                    official={false}
+                    onZoom={null}
+                    disableHoverLift
+                  />
+                  <div className="min-w-0">
+                    <div className="font-arena-display text-[1rem] tracking-[0.05em] text-white">{spotlight.title}</div>
+                    <div className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-100/78">{spotlight.card.name}</div>
+                    <p className="mt-2 text-sm leading-5 text-slate-300">{spotlight.body}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {WHAT_IS_THIS_CONTENT.sections.map((section) => (
+            <div key={section.heading} className="rounded-[1.35rem] border border-slate-800 bg-slate-900/72 p-4">
+              <div className="font-arena-display text-[1.05rem] tracking-[0.05em] text-cyan-100">{section.heading}</div>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{section.body}</p>
+            </div>
+          ))}
+        </div>
+
+        <button onClick={handleClose} className="mt-5 w-full rounded-2xl border border-slate-600 bg-slate-900 py-3.5 font-bold uppercase tracking-[0.04em] text-slate-100 shadow-[0_14px_28px_rgba(15,23,42,0.32)] transition-colors hover:bg-slate-800">
+          Close
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const CardCollectionOverlay = ({ viewingZone, cards = [], official, onClose, onZoom = null }) => {
   if (!viewingZone) return null;
 
@@ -571,11 +759,6 @@ const DIFFICULTY_ART = {
   easy: `${ASSET_BASE_URL}difficulty/deathfish.png`,
   medium: `${ASSET_BASE_URL}difficulty/redfish.png`,
   hard: `${ASSET_BASE_URL}difficulty/shark.png`
-};
-const DIFFICULTY_FLAVOR_LABELS = {
-  easy: 'Deathfish',
-  medium: 'Redfish',
-  hard: 'Shark'
 };
 const CHARACTER_ART = {
   tortoise: tortoisePortrait,
@@ -964,6 +1147,61 @@ const OpeningRollD20 = ({
 };
 const APP_VERSION = 'v0.3.1';
 const ONLINE_MULTIPLAYER_ENABLED = false;
+const WHAT_IS_THIS_CONTENT = {
+  title: 'What Is This?',
+  subtitle: 'A voiced intro to Forgetful Fish',
+  sections: [
+    {
+      heading: 'The Story',
+      body: 'Forgetful Fish is my playable version of Dandan, the weird little Magic format where both players share one library and one graveyard. That turns every game into a fight over memory, prediction, timing, and who really understands the top of the deck.'
+    },
+    {
+      heading: 'Why I Built It',
+      body: 'I built this as an experiment to create an AI that can play Magic: The Gathering. I wanted a format small enough to study deeply, but rich enough to force real decisions instead of simple scripted play.'
+    },
+    {
+      heading: 'Why Dandan',
+      body: 'Dandan is perfect for that experiment. It makes the AI think about stack fights, bluffing, card knowledge, shared resources, and how to shape the opponent’s next draw. The card pool is compact, but the decision space is still very alive.'
+    }
+  ],
+  narration: "Welcome to Forgetful Fish. This is my version of Dandan, the strange Magic format where both players share the same library and the same graveyard. I built it as an experiment to create an AI that can play Magic: The Gathering in a format full of memory, prediction, bluffing, and stack battles. Dandan is the perfect test bed because the cards are few, but the decisions are sharp. Every Brainstorm, Memory Lapse, Predict, and fish attack teaches the AI something about timing, pressure, and hidden information."
+};
+const WHAT_IS_THIS_CARD_SPOTLIGHTS = [
+  {
+    key: 'dandan',
+    card: CARDS.DANDAN,
+    title: 'The Fish',
+    body: 'Dandan is basically the only thing that kills. The whole format bends around when a fish can attack, who can keep it alive, and who can steal it.'
+  },
+  {
+    key: 'memory-lapse',
+    card: CARDS.MEMORY_LAPSE,
+    title: 'The Forgetful Part',
+    body: 'Memory Lapse puts spells back on top, so the next draw is public tension. In a shared library, that top card becomes a battlefield all by itself.'
+  },
+  {
+    key: 'brainstorm',
+    card: CARDS.BRAINSTORM,
+    title: 'Shared Library Chess',
+    body: 'Brainstorm matters more here because setting up the top of the library changes not only your future, but what your opponent might be forced to draw too.'
+  },
+  {
+    key: 'predict',
+    card: CARDS.PREDICT,
+    title: 'Memory Test',
+    body: 'Predict rewards remembering and engineering the top card. That is why Dandan is such a strong MTG AI experiment: it turns hidden information into planned information.'
+  }
+];
+const NARRATION_VOICE_NAME_PREFERENCES = ['Samantha', 'Zira', 'Aria', 'Libby', 'Jenny', 'Google UK English Female', 'Google US English', 'Microsoft'];
+const pickNarrationVoice = (voices = []) => {
+  if (!Array.isArray(voices) || voices.length === 0) return null;
+  const englishVoices = voices.filter((voice) => /^en\b/i.test(String(voice?.lang || '')) || /english/i.test(String(voice?.name || '')));
+  for (const preferredName of NARRATION_VOICE_NAME_PREFERENCES) {
+    const match = englishVoices.find((voice) => String(voice?.name || '').includes(preferredName));
+    if (match) return match;
+  }
+  return englishVoices[0] || voices[0] || null;
+};
 const ADVENTURE_ROUTE = ['shark', 'archivist', 'eel', 'siren', 'undertow', 'cartographer', 'piranha', 'hermit', 'tortoise', 'leviathan'];
 const ADVENTURE_MAP_LAYOUT = [
   { left: 12, top: 78 },
@@ -2740,9 +2978,6 @@ const QuickGameDialog = ({ selectedDifficulty, onClose, onStart }) => (
               <div className={`font-arena-display text-base sm:text-lg tracking-[0.05em] ${accentClass}`}>
                 {AI_DIFFICULTY_LABELS[difficulty]}
               </div>
-              <div className={`text-[11px] font-bold uppercase tracking-[0.16em] ${isSelected ? 'text-slate-300' : 'text-slate-400'}`}>
-                {DIFFICULTY_FLAVOR_LABELS[difficulty]}
-              </div>
             </button>
           );
         })}
@@ -3181,6 +3416,9 @@ const LandingScreen = ({
   onQuickGameOpen,
   onQuickGameClose,
   onQuickGameStart,
+  showWhatIsThisDialog,
+  onOpenWhatIsThis,
+  onCloseWhatIsThis,
   showOnlineModeDialog,
   onOpenOnlineModeDialog,
   onCloseOnlineModeDialog,
@@ -3428,6 +3666,15 @@ const LandingScreen = ({
                     canContinue={canContinueGame}
                     onSettings={onOpenSettings}
                   />
+                  <div className="mt-4 flex justify-center">
+                    <button
+                      onClick={onOpenWhatIsThis}
+                      className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border border-white/14 bg-slate-950/55 px-4 py-2.5 text-slate-100 shadow-[0_18px_36px_rgba(15,23,42,0.28)] backdrop-blur-md transition-all hover:bg-slate-900/72"
+                    >
+                      <Volume2 size={15} className="text-cyan-200" />
+                      <span className="font-arena-display text-[1rem] tracking-[0.04em]">What Is This?</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3468,6 +3715,10 @@ const LandingScreen = ({
           policyKey={activePolicy}
           onClose={() => setActivePolicy(null)}
         />
+      )}
+
+      {showWhatIsThisDialog && (
+        <WhatIsThisOverlay onClose={onCloseWhatIsThis} />
       )}
 
       {showMenuSettings && (
@@ -3666,6 +3917,7 @@ export default function App() {
   const [showPlayerAvatarDialog, setShowPlayerAvatarDialog] = useState(false);
   const [showRivalMenu, setShowRivalMenu] = useState(false);
   const [showQuickGameDialog, setShowQuickGameDialog] = useState(false);
+  const [showWhatIsThisDialog, setShowWhatIsThisDialog] = useState(false);
   const [showOnlineModeDialog, setShowOnlineModeDialog] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -5545,6 +5797,7 @@ export default function App() {
     if (mode !== 'peer') {
       disconnectOnlineMatchmaking({ keepDialog: false, preservePendingMatch: false });
     }
+    setShowWhatIsThisDialog(false);
     setDandanCastConfirm(null);
     setDandanAttackBlockedDialog(null);
     const playerLabel = mode === 'ai_vs_ai'
@@ -5648,6 +5901,7 @@ export default function App() {
     }
     disconnectOnlineMatchmaking({ keepDialog: false, preservePendingMatch: false });
     setShowQuickGameDialog(false);
+    setShowWhatIsThisDialog(false);
     setShowMenuSettings(false);
     setShowPlayerAvatarDialog(false);
     setShowRivalMenu(false);
@@ -5794,6 +6048,7 @@ export default function App() {
     setMenuScreen('home');
     refreshLandingBackground();
     setShowQuickGameDialog(false);
+    setShowWhatIsThisDialog(false);
     setShowMenuSettings(false);
     setShowPlayerAvatarDialog(false);
     updatePeerUi((current) => ({ ...current, open: false, error: '', note: current.note }));
@@ -6001,6 +6256,9 @@ export default function App() {
         onQuickGameOpen={() => setShowQuickGameDialog(true)}
         onQuickGameClose={() => setShowQuickGameDialog(false)}
         onQuickGameStart={handleStartQuickGame}
+        showWhatIsThisDialog={showWhatIsThisDialog}
+        onOpenWhatIsThis={() => setShowWhatIsThisDialog(true)}
+        onCloseWhatIsThis={() => setShowWhatIsThisDialog(false)}
         onOpenOnlineModeDialog={handleOpenOnlineModeDialog}
         onCloseOnlineModeDialog={() => setShowOnlineModeDialog(false)}
         onChooseOnlineFriend={handleOpenFriendDialog}
