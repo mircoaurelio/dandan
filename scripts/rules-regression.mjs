@@ -1153,7 +1153,7 @@ test('hard AI jams Dandan when it can win the immediate counter war', () => {
   expect(action.cardId === aiDandan.id, 'Hard AI should cast Dandan when it has Memory Lapse backup');
 });
 
-test('declare attackers step auto-enforces mandatory Dandan attacks', () => {
+test('declare attackers step lets players skip combat without auto-enforcing Dandan attacks', () => {
   const dandan = makeCard(CARDS.DANDAN, {
     id: 'forced-attacker',
     owner: 'player',
@@ -1184,9 +1184,11 @@ test('declare attackers step auto-enforces mandatory Dandan attacks', () => {
   state = reducer(state, { type: 'NEXT_PHASE' });
 
   const attackingDandan = state.player.board.find((card) => card.id === dandan.id);
-  expect(state.ai.life === 16, `Forced Dandan attack should have connected for 4 damage, got AI life ${state.ai.life}`);
-  expect(attackingDandan?.tapped === true, 'Forced attacker should be tapped after combat resolves');
-  expect(state.hasAttacked.player === true, 'Forced combat should count as an attack for the turn');
+  expect(state.phase === 'main2', `Skipping combat should move directly to main2, got ${state.phase}`);
+  expect(state.ai.life === 20, `Skipping combat should deal no damage, got AI life ${state.ai.life}`);
+  expect(attackingDandan?.attacking !== true, 'Skipped combat should not leave Dandan marked as an attacker');
+  expect(attackingDandan?.tapped !== true, 'Skipped combat should not tap Dandan');
+  expect(state.hasAttacked.player !== true, 'Skipped combat should not count as an attack for the turn');
 });
 
 test('Control Magic steals a Dandan without gaining creature summoning sickness itself', () => {

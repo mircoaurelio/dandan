@@ -13,12 +13,12 @@ export const CARDS = {
   ACCUMULATED_KNOWLEDGE: buildCard(2140, 'Accumulated Knowledge', 'Instant', 2, '{1}{U}', "Draw a card, then draw cards equal to the number of cards named Accumulated Knowledge in all graveyards.", null, true, false),
   MAGICAL_HACK: buildCard(2141, 'Magical Hack', 'Instant', 1, '{U}', "Change the text of target permanent by replacing all instances of one basic land type with another.", null, true, false),
   MEMORY_LAPSE: buildCard(2142, 'Memory Lapse', 'Instant', 2, '{1}{U}', "Counter target spell. If that spell is countered this way, put it on top of its owner's library instead of into that player's graveyard.", null, true, false),
-  MYSTIC_SANCTUARY: buildCard(2143, 'Mystic Sanctuary', 'Land â€” Island', 0, '', "Enters tapped unless you control 3+ other Islands. When it enters untapped, you may put target inst/sorc from grave on top.", null, false, true),
+  MYSTIC_SANCTUARY: buildCard(2143, 'Mystic Sanctuary', 'Land â€” Island', 0, '', "Mystic Sanctuary enters the battlefield tapped unless you control three or more other Islands.\nWhen Mystic Sanctuary enters the battlefield untapped, you may put target instant or sorcery card from your graveyard on top of your library.", null, false, true),
   ISLAND_1: buildCard(2144, 'Island', 'Basic Land â€” Island', 0, '', "({T}: Add {U}.)", null, false, true),
   ISLAND_2: buildCard(2145, 'Island', 'Basic Land â€” Island', 0, '', "({T}: Add {U}.)", null, false, true),
   ISLAND_3: buildCard(2146, 'Island', 'Basic Land â€” Island', 0, '', "({T}: Add {U}.)", null, false, true),
   ISLAND_4: buildCard(2147, 'Island', 'Basic Land â€” Island', 0, '', "({T}: Add {U}.)", null, false, true),
-  BRAINSTORM: buildCard(2148, 'Brainstorm', 'Instant', 1, '{U}', "Draw 3 cards, then put 2 cards from your hand on top of your library in any order.", null, true, false),
+  BRAINSTORM: buildCard(2148, 'Brainstorm', 'Instant', 1, '{U}', "Draw three cards, then put two cards from your hand on top of your library in any order.", null, true, false),
   CAPTURE: buildCard(2149, 'Capture of Jingzhou', 'Sorcery', 5, '{3}{U}{U}', "Take an extra turn after this one.", null, false, false),
   CHART: buildCard(2150, 'Chart a Course', 'Sorcery', 2, '{1}{U}', "Draw 2 cards. Then discard a card unless you attacked with a creature this turn.", null, false, false),
   CONTROL_MAGIC: buildCard(2151, 'Control Magic', 'Enchantment â€” Aura', 4, '{2}{U}{U}', "Enchant creature. You control enchanted creature.", null, false, false),
@@ -26,10 +26,10 @@ export const CARDS = {
   DAYS_UNDOING: buildCard(2153, "Day's Undoing", 'Sorcery', 3, '{2}{U}', "Each player shuffles hand and grave into library, draws 7. If it's your turn, end the turn.", null, false, false),
   MENTAL_NOTE: buildCard(2154, 'Mental Note', 'Instant', 1, '{U}', "Mill 2 cards, then draw a card.", null, true, false),
   METAMORPHOSE: buildCard(2155, 'Metamorphose', 'Instant', 2, '{1}{U}', "Put target permanent on top of its owner's library.", null, true, false),
-  PREDICT: buildCard(2156, 'Predict', 'Instant', 2, '{1}{U}', "Name a card. Target player mills 1. If it's the named card, draw 2. Otherwise draw 1.", null, true, false),
-  TELLING_TIME: buildCard(2157, 'Telling Time', 'Instant', 2, '{1}{U}', "Look at top 3. Put one in hand, one on top, one on bottom.", null, true, false),
+  PREDICT: buildCard(2156, 'Predict', 'Instant', 2, '{1}{U}', "Name a card, then put the top card of the shared library into the graveyard. If the milled card has the chosen name, draw two cards. Otherwise, draw a card.", null, true, false),
+  TELLING_TIME: buildCard(2157, 'Telling Time', 'Instant', 2, '{1}{U}', "Look at the top three cards of your library. Put one of those cards into your hand, one on top of your library, and one on the bottom of your library.", null, true, false),
   UNSUBSTANTIATE: buildCard(2158, 'Unsubstantiate', 'Instant', 2, '{1}{U}', "Return target spell or creature to its owner's hand.", null, true, false),
-  HALIMAR: buildCard(2159, 'Halimar Depths', 'Land', 0, '', "Enters tapped. When it enters, look at top 3 cards of your library, put back in any order.", null, false, true),
+  HALIMAR: buildCard(2159, 'Halimar Depths', 'Land', 0, '', "Halimar Depths enters the battlefield tapped.\nWhen Halimar Depths enters the battlefield, look at the top three cards of your library, then put them back in any order.", null, false, true),
   FENGRAF: buildCard(2160, 'Haunted Fengraf', 'Land', 0, '', "{T}: Add {C}. {3}, {T}, Sac: Return random creature from grave to hand.", null, false, true),
   SANDBAR: buildCard(2161, 'Lonely Sandbar', 'Land', 0, '', "Enters tapped. {T}: Add {U}. Cycling {U}.", null, false, true),
   REMOTE_ISLE: buildCard(2162, 'Remote Isle', 'Land', 0, '', "Enters tapped. {T}: Add {U}. Cycling {2}.", null, false, true),
@@ -577,6 +577,27 @@ export const getManaStats = (board, pool = EMPTY_MANA_POOL) => {
   };
 };
 const cloneBoard = (board) => board.map(card => ({ ...card }));
+const isBasicIslandCard = (card) => Boolean(card?.isLand) && card.name === 'Island' && card.type?.includes('Basic');
+const getLandTapPriority = (card) => {
+  if (isBasicIslandCard(card)) return 0;
+  if ((card?.blueSources || 0) > 0) return 1;
+  return 2;
+};
+const tapMatchingLands = (board, predicate, amount, getPriority = (_card) => 0) => {
+  let tapped = 0;
+  const candidates = board
+    .map((card, index) => ({ card, index }))
+    .filter(({ card }) => predicate(card))
+    .sort((left, right) => getPriority(left.card) - getPriority(right.card) || left.index - right.index);
+
+  for (const { card } of candidates) {
+    if (tapped >= amount) break;
+    card.tapped = true;
+    tapped++;
+  }
+
+  return tapped;
+};
 const spendMana = (board, pool = EMPTY_MANA_POOL, totalCost, blueCost = 0) => {
   let remainingTotal = totalCost;
   let remainingBlue = blueCost;
@@ -589,36 +610,36 @@ const spendMana = (board, pool = EMPTY_MANA_POOL, totalCost, blueCost = 0) => {
   remainingBlue -= spendBluePool;
   remainingTotal -= spendBluePool;
 
-  nextBoard.forEach(card => {
-    if (remainingBlue > 0 && card.isLand && !card.tapped && (card.blueSources || 0) > 0) {
-      card.tapped = true;
-      remainingBlue--;
-      remainingTotal--;
-    }
-  });
+  const blueLandsSpent = tapMatchingLands(
+    nextBoard,
+    card => card.isLand && !card.tapped && (card.blueSources || 0) > 0,
+    remainingBlue,
+    getLandTapPriority
+  );
+  remainingBlue -= blueLandsSpent;
+  remainingTotal -= blueLandsSpent;
 
   const spendNonBluePool = Math.min(Math.max(0, nextPool.total - nextPool.blue), remainingTotal);
   nextPool.total -= spendNonBluePool;
   remainingTotal -= spendNonBluePool;
 
-  nextBoard.forEach(card => {
-    if (remainingTotal > 0 && card.isLand && !card.tapped && (card.blueSources || 0) === 0) {
-      card.tapped = true;
-      remainingTotal--;
-    }
-  });
+  remainingTotal -= tapMatchingLands(
+    nextBoard,
+    card => card.isLand && !card.tapped && (card.blueSources || 0) === 0,
+    remainingTotal
+  );
 
   const spendBluePoolForGeneric = Math.min(nextPool.blue, remainingTotal);
   nextPool.blue -= spendBluePoolForGeneric;
   nextPool.total -= spendBluePoolForGeneric;
   remainingTotal -= spendBluePoolForGeneric;
 
-  nextBoard.forEach(card => {
-    if (remainingTotal > 0 && card.isLand && !card.tapped) {
-      card.tapped = true;
-      remainingTotal--;
-    }
-  });
+  remainingTotal -= tapMatchingLands(
+    nextBoard,
+    card => card.isLand && !card.tapped,
+    remainingTotal,
+    getLandTapPriority
+  );
 
   return { board: nextBoard, pool: nextPool };
 };
@@ -3779,7 +3800,6 @@ export const createGameReducer = (effects = defaultEffects) => {
         s.phase = 'declare_attackers';
         s.priority = s.turn;
       } else if (s.phase === 'declare_attackers') {
-        s = enforceMandatoryDandanAttacks(s, s.turn);
         const attackers = s[s.turn].board.filter(c => c.attacking).length;
         if (attackers > 0) {
             s.phase = 'declare_blockers';

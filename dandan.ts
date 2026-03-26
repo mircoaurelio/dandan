@@ -3315,11 +3315,17 @@ export default function App() {
     : peerUi.localReady
       ? (peerUi.remoteReady ? 'Starting Game...' : 'Waiting For Opponent')
       : 'Start Game';
+  const canPlayerInitiateCombat = state.player.board.some(card =>
+    card.name === DANDAN_NAME &&
+    !card.summoningSickness &&
+    !card.tapped &&
+    canDandanAttackDefender(card, state.ai.board)
+  );
   const canPlayerAttemptAttackSelection = !isAiMirror &&
     state.turn === 'player' &&
     state.phase === 'declare_attackers' &&
     state.priority === 'player' &&
-    state.player.board.some(card => card.name === DANDAN_NAME && !card.summoningSickness && !card.tapped);
+    canPlayerInitiateCombat;
   const localPendingAction = state.pendingAction && (state.pendingAction.player || 'player') === 'player'
     ? state.pendingAction
     : null;
@@ -5238,7 +5244,8 @@ export default function App() {
     state.priority === 'player' &&
     card.name === DANDAN_NAME &&
     !card.summoningSickness &&
-    !card.tapped;
+    !card.tapped &&
+    canDandanAttackDefender(card, state.ai.board);
 
   const adventurePathPoints = ADVENTURE_MAP_LAYOUT.map(({ left, top }) => `${left},${top}`).join(' ');
 
@@ -5790,13 +5797,12 @@ export default function App() {
      passIcon = <Layers size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'} />;
      btnColorClass = 'bg-gradient-to-b from-cyan-400 to-cyan-600 border-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.6)] text-slate-900';
   } else if (state.phase === 'main1') {
-     const canAttack = state.player.board.some(c => c.name === 'DandÃ¢n' && !c.summoningSickness && !c.tapped);
-     passLabel = canAttack ? 'TO COMBAT' : 'END TURN';
-     passIcon = canAttack ? <Swords size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/> : <Moon size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/>;
-     btnColorClass = canAttack ? 'bg-gradient-to-b from-orange-400 to-orange-600 border-orange-200 shadow-[0_0_20px_rgba(249,115,22,0.6)] text-slate-900' : 'bg-gradient-to-b from-indigo-400 to-indigo-600 border-indigo-200 shadow-[0_0_20px_rgba(129,140,248,0.6)] text-white';
+     passLabel = canPlayerInitiateCombat ? 'TO COMBAT' : 'END TURN';
+     passIcon = canPlayerInitiateCombat ? <Swords size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/> : <Moon size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'}/>;
+     btnColorClass = canPlayerInitiateCombat ? 'bg-gradient-to-b from-orange-400 to-orange-600 border-orange-200 shadow-[0_0_20px_rgba(249,115,22,0.6)] text-slate-900' : 'bg-gradient-to-b from-indigo-400 to-indigo-600 border-indigo-200 shadow-[0_0_20px_rgba(129,140,248,0.6)] text-white';
   } else if (state.phase === 'declare_attackers' && state.turn === 'player') {
      const isAttacking = state.player.board.some(c=>c.attacking);
-     passLabel = isAttacking ? 'ATTACK' : 'NO ATKS';
+     passLabel = isAttacking ? 'ATTACK' : 'SKIP';
      passIcon = <Swords size={14} className={state.priority === 'player' ? 'text-current' : 'text-slate-600'} />;
      btnColorClass = isAttacking ? 'bg-gradient-to-b from-red-500 to-red-700 border-red-300 shadow-[0_0_20px_rgba(239,68,68,0.6)] text-white' : 'bg-gradient-to-b from-slate-400 to-slate-600 border-slate-200 shadow-[0_0_20px_rgba(148,163,184,0.6)] text-slate-900';
   } else if (state.phase === 'declare_blockers' && state.turn === 'ai') {
@@ -6097,11 +6103,16 @@ export default function App() {
          >
             <div className="bg-slate-900 p-6 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg flex flex-col items-center text-center">
                <h3 className="font-arena-display text-xl font-bold text-blue-400 mb-2 tracking-[0.12em] uppercase">Brainstorm</h3>
-               <p className="text-slate-300 text-sm mb-6">Select 2 cards to put back on top of your library.</p>
+               <p className="text-slate-300 text-sm mb-6">Select 2 cards to put back on top of your library. The last selected card will be on top.</p>
                <div className="flex flex-wrap gap-2 justify-center mb-6">
                   {state.player.hand.map(c => (
                      <div key={c.id} onClick={() => dispatch({ type: 'TOGGLE_PENDING_SELECT', cardId: c.id })} className={`cursor-pointer transition-transform ${localPendingAction.selected.includes(c.id) ? 'ring-4 ring-blue-500 rounded-md shadow-[0_10px_20px_rgba(37,99,235,0.45)]' : 'opacity-80'}`}>
                         <Card card={c} official={useOfficialCards} onZoom={setZoomedCard} disableHoverLift />
+                        {localPendingAction.selected.includes(c.id) && (
+                          <div className="mt-2 text-[10px] font-bold tracking-widest text-blue-300 text-center">
+                            {localPendingAction.selected.indexOf(c.id) === localPendingAction.selected.length - 1 ? 'TOP' : '2ND FROM TOP'}
+                          </div>
+                        )}
                      </div>
                   ))}
                </div>
