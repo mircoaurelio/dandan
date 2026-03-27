@@ -1618,6 +1618,67 @@ const storeLandingBackground = (background) => {
     window.localStorage.setItem(LANDING_BACKGROUND_STORAGE_KEY, background);
   } catch (_error) {}
 };
+const buildLandscapeLandingBackground = (sourceUrl) => new Promise((resolve, reject) => {
+  if (!sourceUrl || typeof window === 'undefined') {
+    resolve(sourceUrl);
+    return;
+  }
+
+  const image = new window.Image();
+  let settled = false;
+  const finish = (callback) => {
+    if (settled) return;
+    settled = true;
+    callback();
+  };
+  const render = () => {
+    try {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) {
+        reject(new Error('Landing background has invalid dimensions.'));
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = sourceHeight;
+      canvas.height = sourceWidth;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        reject(new Error('Unable to prepare the landing background.'));
+        return;
+      }
+
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate(Math.PI / 2);
+      context.drawImage(image, -sourceWidth / 2, -sourceHeight / 2, sourceWidth, sourceHeight);
+
+      const outputType = /\.jpe?g($|\?)/i.test(sourceUrl) ? 'image/jpeg' : 'image/png';
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('Unable to export the landing background.'));
+          return;
+        }
+        resolve(URL.createObjectURL(blob));
+      }, outputType, 0.92);
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error('Unable to rotate the landing background.'));
+    }
+  };
+
+  image.onload = () => finish(render);
+  image.onerror = () => finish(() => reject(new Error('Unable to load the landing background.')));
+  image.decoding = 'async';
+  image.src = sourceUrl;
+
+  if (image.complete) {
+    if (typeof image.decode === 'function') {
+      image.decode().catch(() => {}).finally(() => finish(render));
+    } else {
+      finish(render);
+    }
+  }
+});
 const loadRivalProgress = () => {
   if (typeof window === 'undefined') return { adventureWinsCount: 0 };
   try {
@@ -3417,8 +3478,10 @@ const LandingScreen = ({
     if (typeof window === 'undefined') return false;
     return window.innerWidth > window.innerHeight;
   });
+  const [displayLandingBackground, setDisplayLandingBackground] = useState(landingBackground);
   const landingRippleSurfaceRef = useRef(null);
   const landingRippleInstanceRef = useRef(null);
+  const landscapeLandingBackgroundCacheRef = useRef(new Map());
   const hasPlayedInitialRevealRef = useRef(menuScreen !== 'home');
 
   useEffect(() => {
@@ -3437,6 +3500,53 @@ const LandingScreen = ({
       window.removeEventListener('orientationchange', syncViewportOrientation);
     };
   }, []);
+
+  useEffect(() => () => {
+    landscapeLandingBackgroundCacheRef.current.forEach((backgroundUrl) => {
+      try {
+        URL.revokeObjectURL(backgroundUrl);
+      } catch (_error) {}
+    });
+    landscapeLandingBackgroundCacheRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (!isLandscapeViewport) {
+      setDisplayLandingBackground(landingBackground);
+      return undefined;
+    }
+
+    const cachedLandscapeBackground = landscapeLandingBackgroundCacheRef.current.get(landingBackground);
+    if (cachedLandscapeBackground) {
+      setDisplayLandingBackground(cachedLandscapeBackground);
+      return undefined;
+    }
+
+    let active = true;
+    setDisplayLandingBackground(landingBackground);
+
+    buildLandscapeLandingBackground(landingBackground)
+      .then((rotatedBackground) => {
+        if (!active) {
+          try {
+            URL.revokeObjectURL(rotatedBackground);
+          } catch (_error) {}
+          return;
+        }
+
+        landscapeLandingBackgroundCacheRef.current.set(landingBackground, rotatedBackground);
+        setDisplayLandingBackground(rotatedBackground);
+      })
+      .catch(() => {
+        if (active) {
+          setDisplayLandingBackground(landingBackground);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [landingBackground, isLandscapeViewport]);
 
   useEffect(() => {
     if (menuScreen !== 'home') {
@@ -3488,18 +3598,6 @@ const LandingScreen = ({
   const backgroundVisible = menuScreen !== 'home' || homeRevealStep >= 1;
   const titleVisible = menuScreen !== 'home' || homeRevealStep >= 2;
   const actionsVisible = menuScreen !== 'home' || (menuAssetsReady && homeRevealStep >= 3);
-  const landingBackgroundTransform = isLandscapeViewport
-    ? `translate(-50%, -50%) rotate(90deg) scale(${backgroundVisible ? '1' : '1.04'})`
-    : `translate(-50%, -50%) scale(${backgroundVisible ? '1' : '1.04'})`;
-  const landingBackgroundSurfaceStyle = {
-    width: isLandscapeViewport ? '100dvh' : '100vw',
-    height: isLandscapeViewport ? '100vw' : '100dvh',
-    backgroundImage: `url(${landingBackground})`,
-    filter: menuScreen === 'home'
-      ? 'saturate(1.08) brightness(1.12) contrast(1.04)'
-      : 'saturate(1.02) brightness(0.92)',
-    transform: landingBackgroundTransform
-  };
 
   useEffect(() => {
     const surface = landingRippleSurfaceRef.current;
@@ -3514,7 +3612,7 @@ const LandingScreen = ({
         perturbance: 0.015,
         dropRadius: 18,
         interactive: false,
-        imageUrl: landingBackground
+        imageUrl: displayLandingBackground
       });
       rippleSurface.ripples('updateSize');
     } catch (_error) {
@@ -3530,7 +3628,7 @@ const LandingScreen = ({
         landingRippleInstanceRef.current = null;
       }
     };
-  }, [landingBackground, menuScreen]);
+  }, [displayLandingBackground, menuScreen]);
 
   useEffect(() => {
     const rippleSurface = landingRippleInstanceRef.current;
@@ -3578,10 +3676,15 @@ const LandingScreen = ({
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div
           ref={landingRippleSurfaceRef}
-          className={`absolute left-1/2 top-1/2 bg-center bg-cover bg-no-repeat transition-[opacity,transform,filter] duration-[1400ms] ease-out ${
-            backgroundVisible ? 'opacity-100' : 'opacity-0'
+          className={`absolute inset-0 bg-center bg-cover bg-no-repeat transition-[opacity,transform,filter] duration-[1400ms] ease-out ${
+            backgroundVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-[1.04]'
           }`}
-          style={landingBackgroundSurfaceStyle}
+          style={{
+            backgroundImage: `url(${displayLandingBackground})`,
+            filter: menuScreen === 'home'
+              ? 'saturate(1.08) brightness(1.12) contrast(1.04)'
+              : 'saturate(1.02) brightness(0.92)'
+          }}
         />
         <div
           className={`absolute inset-0 transition-opacity duration-[1400ms] ease-out ${
