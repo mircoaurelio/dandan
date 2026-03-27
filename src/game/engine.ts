@@ -1531,6 +1531,16 @@ const getAiOpeningBottomScore = (state, actor, card, policy) => {
   }
   return score;
 };
+const getOpeningKeepPenalty = (state, actor, hand) => {
+  const landCount = hand.filter(card => card?.isLand).length;
+  const blueLandCount = hand.filter(card => card?.isLand && (card.blueSources || 0) > 0).length;
+  let penalty = Math.abs(landCount - 3) * 2;
+
+  if (blueLandCount === 0) penalty += 200;
+  if (shouldAiMulliganOpeningHand({ ...state, [actor]: { ...state[actor], hand } }, actor, 0)) penalty += 1000;
+
+  return penalty;
+};
 const getAiPutBackCards = (state, actor, count, policy) => {
   const chosen = [...state[actor].hand]
     .sort((left, right) => getAiCardValue(state, actor, left, policy) - getAiCardValue(state, actor, right, policy) || left.cost - right.cost)
@@ -1544,9 +1554,56 @@ const getAiPutBackCards = (state, actor, count, policy) => {
 
   return chosen;
 };
-const getAiOpeningBottomCards = (state, actor, count, policy) => [...state[actor].hand]
-  .sort((left, right) => getAiOpeningBottomScore(state, actor, left, policy) - getAiOpeningBottomScore(state, actor, right, policy) || left.cost - right.cost)
-  .slice(0, count);
+export const getAiOpeningBottomCards = (state, actor, count, policy) => {
+  const hand = [...state[actor].hand];
+  if (count <= 0) return [];
+  if (count >= hand.length) return hand;
+
+  const bottomScores = new Map(hand.map(card => [card.id, getAiOpeningBottomScore(state, actor, card, policy)]));
+  let bestChoice = null;
+  const chosenIndices = [];
+
+  const evaluateChoice = () => {
+    const chosenIdSet = new Set(chosenIndices.map(index => hand[index].id));
+    const keptHand = hand.filter(card => !chosenIdSet.has(card.id));
+    const keepPenalty = getOpeningKeepPenalty(state, actor, keptHand);
+    const bottomScore = chosenIndices.reduce((sum, index) => sum + (bottomScores.get(hand[index].id) || 0), 0);
+    const totalScore = keepPenalty + bottomScore;
+
+    if (
+      !bestChoice ||
+      totalScore < bestChoice.totalScore ||
+      (totalScore === bestChoice.totalScore && keepPenalty < bestChoice.keepPenalty) ||
+      (totalScore === bestChoice.totalScore && keepPenalty === bestChoice.keepPenalty && bottomScore < bestChoice.bottomScore)
+    ) {
+      bestChoice = {
+        indices: [...chosenIndices],
+        totalScore,
+        keepPenalty,
+        bottomScore
+      };
+    }
+  };
+
+  const searchChoices = (startIndex) => {
+    if (chosenIndices.length === count) {
+      evaluateChoice();
+      return;
+    }
+
+    for (let index = startIndex; index <= hand.length - (count - chosenIndices.length); index++) {
+      chosenIndices.push(index);
+      searchChoices(index + 1);
+      chosenIndices.pop();
+    }
+  };
+
+  searchChoices(0);
+
+  return (bestChoice?.indices || [])
+    .map(index => hand[index])
+    .sort((left, right) => (bottomScores.get(left.id) || 0) - (bottomScores.get(right.id) || 0) || left.cost - right.cost);
+};
 const shuffleDeckInPlace = (deck) => {
   for (let i = deck.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));

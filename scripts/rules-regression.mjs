@@ -44,6 +44,7 @@ const {
   chooseAiAction,
   controlsIsland,
   createGameReducer,
+  getAiOpeningBottomCards,
   getAiPolicyForActor,
   initialState,
   isActivatable,
@@ -510,6 +511,37 @@ test('generic AI starting first still plays a land on its opening main phase', (
 
   const action = chooseAiAction(state, 'ai', 'medium', getAiPolicyForActor(state, 'ai', 'medium'));
   expect(action.type === 'PLAY_LAND' && action.cardId === island.id, 'An AI that starts first should still play its opening land in main1');
+});
+
+test('AI mulligan bottoms keep a functional land count when possible', () => {
+  const island = makeCard(CARDS.ISLAND_1, { id: 'bottom-safe-island' });
+  const halimar = makeCard(CARDS.HALIMAR, { id: 'bottom-safe-halimar' });
+  const controlMagic = makeCard(CARDS.CONTROL_MAGIC, { id: 'bottom-safe-control', owner: 'ai' });
+  const crystalSpray = makeCard(CARDS.CRYSTAL_SPRAY, { id: 'bottom-safe-spray', owner: 'ai' });
+  const mentalNote = makeCard(CARDS.MENTAL_NOTE, { id: 'bottom-safe-note', owner: 'ai' });
+  const memoryLapse = makeCard(CARDS.MEMORY_LAPSE, { id: 'bottom-safe-lapse', owner: 'ai' });
+  const predict = makeCard(CARDS.PREDICT, { id: 'bottom-safe-predict', owner: 'ai' });
+
+  const state = makeState({
+    difficulty: 'medium',
+    aiCharacterId: 'shark',
+    ai: {
+      life: 20,
+      hand: [controlMagic, island, mentalNote, memoryLapse, crystalSpray, halimar, predict],
+      board: [],
+      landsPlayed: 0
+    }
+  });
+
+  const policy = getAiPolicyForActor(state, 'ai', 'medium');
+  const bottomed = getAiOpeningBottomCards(state, 'ai', 1, policy);
+  const kept = state.ai.hand.filter((card) => card.id !== bottomed[0]?.id);
+  const keptLandCount = kept.filter((card) => card.isLand).length;
+
+  expect(bottomed.length === 1, `expected one bottomed card, got ${bottomed.length}`);
+  expect(bottomed[0]?.id !== island.id && bottomed[0]?.id !== halimar.id, 'AI should not bottom into a one-land final keep when a spell can be bottomed instead');
+  expect(keptLandCount === 2, `AI should preserve both lands in the final kept hand, got ${keptLandCount}`);
+  expect(qualifiesForDandanFreeMulligan(kept) === false, 'AI bottoming should avoid leaving a final hand that still qualifies for a free Dandan mulligan');
 });
 
 test('Haunted Fengraf sacrifices itself and can return Dandan', () => {
