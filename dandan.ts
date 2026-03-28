@@ -1992,9 +1992,16 @@ const Preloader = ({ onComplete }) => {
 const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false, official = false, draggable = false, onDragStart, onDragOver, onDrop, castable = false, targetable = false, stackTargeted = false, activatable = false, subtleHighlight = false, disableHoverLift = false, desktopHoverZoom = false }) => {
   const holdTimer = useRef(null);
   const [isPressing, setIsPressing] = useState(false);
+  const [officialImageFailed, setOfficialImageFailed] = useState(false);
+  const [proxyImageFailed, setProxyImageFailed] = useState(false);
   const printedLandType = card.type?.includes('Island') ? 'Island' : null;
   const changedLandType = zone === 'board' && card.isLand && card.landType && card.landType !== printedLandType ? card.landType : null;
   const holdDelayMs = 280;
+
+  useEffect(() => {
+    setOfficialImageFailed(false);
+    setProxyImageFailed(false);
+  }, [card.id, card.name, card.image, card.fullImage, official, hidden]);
 
   const startHold = (e) => {
      if (e.type === 'mousedown' && e.button === 2) {
@@ -2093,8 +2100,15 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
           <div className="absolute inset-[-2px] rounded-[8px] border border-cyan-100/45 bg-cyan-200/5 shadow-[0_0_8px_rgba(34,211,238,0.14)] pointer-events-none z-50" />
         )}
         <div className="absolute inset-0 bg-slate-900" />
-        {hidden ? <CardBack /> : official ? (
-          <img src={card.fullImage} alt={card.name} loading="eager" decoding="sync" className="absolute inset-0 w-full h-full object-cover rounded-md pointer-events-none" />
+        {hidden ? <CardBack /> : official && !officialImageFailed ? (
+          <img
+            src={card.fullImage || card.image}
+            alt={card.name}
+            loading="eager"
+            decoding="sync"
+            className="absolute inset-0 w-full h-full object-cover rounded-md pointer-events-none"
+            onError={() => setOfficialImageFailed(true)}
+          />
         ) : (
           <div className="absolute inset-0 border-[3px] border-slate-900 rounded-md flex flex-col bg-slate-500 p-[2px]">
             <div className={`absolute inset-0 opacity-90 ${card.isLand ? 'bg-sky-200' : 'bg-blue-600'}`}></div>
@@ -2104,7 +2118,18 @@ const Card = ({ card, onClick, onZoom, zone = 'hand', style = {}, hidden = false
                 <span className="font-bold text-slate-800 text-[5px]">{card.manaCost}</span>
               </div>
               <div className="flex-1 bg-slate-800/80 border border-slate-500 rounded-sm overflow-hidden flex items-center justify-center relative shadow-inner">
-                 <img src={card.image} alt="" loading="eager" decoding="sync" className="absolute inset-0 w-full h-full object-cover pointer-events-none" onError={(e) => { e.target.style.display = 'none'; }} />
+                {!proxyImageFailed && card.image ? (
+                  <img
+                    src={card.image}
+                    alt=""
+                    loading="eager"
+                    decoding="sync"
+                    className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+                    onError={() => setProxyImageFailed(true)}
+                  />
+                ) : (
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_28%_22%,rgba(186,230,253,0.32),transparent_30%),linear-gradient(180deg,rgba(14,116,144,0.42),rgba(8,47,73,0.9))]" />
+                )}
               </div>
               <div className="bg-slate-100/95 border border-slate-400 rounded-sm px-1 shadow-sm h-2.5 flex items-center">
                 <span className="font-bold text-slate-900 text-[4px] truncate">{card.type}</span>
@@ -6788,6 +6813,31 @@ export default function App() {
     state.pendingAction ||
     state.phase === 'mulligan'
   );
+  const canTriggerPassShortcut = state.started && !isAiMirror && !hidePassButton && state.priority === 'player' && !state.stackResolving && !isAutoPassing;
+  const handlePassPriority = () => {
+    AudioEngine.init();
+    dispatch({ type: 'PASS_PRIORITY', player: 'player' });
+  };
+
+  useEffect(() => {
+    if (!canTriggerPassShortcut) return;
+
+    const handleWindowKeyDown = (event) => {
+      if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName;
+        if (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON') return;
+      }
+
+      event.preventDefault();
+      handlePassPriority();
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [canTriggerPassShortcut, handlePassPriority]);
 
   let passIcon = <SkipForward size={14} className={state.priority === 'player' && !state.stackResolving ? 'text-current' : 'text-slate-600'}/>;
   let passLabel = 'PASS';
@@ -7329,7 +7379,7 @@ export default function App() {
       {!isAiMirror && !hidePassButton && <div className="absolute bottom-6 right-4 sm:bottom-8 sm:right-8 z-[150] flex flex-col items-center pointer-events-auto">
          <button
            disabled={hidePassButton || state.priority !== 'player' || state.stackResolving || isAutoPassing}
-           onClick={() => { AudioEngine.init(); dispatch({ type: 'PASS_PRIORITY', player: 'player' }); }}
+           onClick={handlePassPriority}
            onTouchEnd={(e) => e.currentTarget.blur()}
            className={`arena-pass-button relative group overflow-hidden w-16 h-16 sm:w-20 sm:h-20 rounded-full flex flex-col items-center justify-center gap-1 transition-all shadow-[0_0_25px_rgba(0,0,0,0.8)] border-2 outline-none focus:outline-none focus-visible:outline-none focus:ring-0 focus-visible:ring-0 ${
               isAutoPassing ? 'bg-amber-900 border-amber-500 animate-pulse text-amber-400' :
