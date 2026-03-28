@@ -2314,6 +2314,10 @@ test('Day\'s Undoing exiles itself instead of joining the shuffled graveyard', (
   expect(state.exile.some((card) => card.id === undoing.id), 'Day\'s Undoing should exile itself when it ends the turn');
   expect(!state.graveyard.some((card) => card.id === undoing.id), 'Day\'s Undoing incorrectly went to the graveyard');
   expect(!state.deck.some((card) => card.id === undoing.id), 'Day\'s Undoing incorrectly got shuffled back into the library');
+  expect(state.turn === 'ai', `Day's Undoing should pass directly to the opponent's turn, got ${state.turn}`);
+  expect(['upkeep', 'main1'].includes(state.phase), `Day's Undoing should skip to the next turn, got phase ${state.phase}`);
+  expect(state.priority === 'ai', `Day's Undoing should leave priority with the next turn player, got ${state.priority}`);
+  expect(state.stack.length === 0, 'Day\'s Undoing should leave no stack objects behind after ending the turn');
 });
 
 test('Capture of Jingzhou adds an extra turn without skipping the current main phase', () => {

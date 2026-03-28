@@ -4249,14 +4249,15 @@ export const createGameReducer = (effects = defaultEffects) => {
         }
         if (endsTurn) {
             s.exile.push(spell.card);
-            logAction(`Day's Undoing resets hands and graveyard, then is exiled.`);
-            s[s.turn].board.forEach(c => { c.attacking = false; c.blocking = false; });
-            s[s.turn === 'player' ? 'ai' : 'player'].board.forEach(c => { c.attacking = false; c.blocking = false; });
-            s.phase = 'main2';
-            s.priority = s.turn;
+            s.stack = [];
+            logAction(`Day's Undoing resets hands and graveyard, then ends the turn.`);
+            s.player.board.forEach(c => { c.attacking = false; c.blocking = false; });
+            s.ai.board.forEach(c => { c.attacking = false; c.blocking = false; });
+            s.pendingAction = null;
+            s.pendingTargetSelection = null;
             s.stackResolving = false;
             s.consecutivePasses = 0;
-            return reducer(s, { type: 'NEXT_PHASE' });
+            return reducer(s, { type: 'NEXT_TURN', silentPhaseSound: true });
         }
         s.graveyard.push(spell.card);
         logAction(`Day's Undoing resets hands and graveyard!`);
