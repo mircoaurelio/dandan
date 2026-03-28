@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useReducer } from 'react';
+import React, { useState, useEffect, useRef, useReducer } from 'react';
 import { Play, SkipForward, Activity, Layers, Skull, Image as ImageIcon, Settings, X, Sun, Moon, Swords, Volume2, VolumeX, ArrowLeft, ArrowLeftRight, Target, Droplet, Shield, CloudRain, LogOut, Users, Share2, Copy, Wifi, WifiOff, RefreshCw, Link as LinkIcon, Upload } from 'lucide-react';
 import { Peer } from 'peerjs';
 import $ from 'jquery';
@@ -5875,6 +5875,48 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [state.priority, state.actionCount, state.stackResolving, state.winner, state.turn, state.phase, state.pendingAction, isAiMirror, difficultySpeed.think, difficultySpeed.pass, isPeerMatch]);
 
+  const isAutoPassing = state.priority === 'player' && !state.stackResolving && !state.pendingTargetSelection && !state.pendingAction && !dandanCastConfirm && !dandanAttackBlockedDialog && !canPlayerAttemptAttackSelection && !checkHasActions(state, 'player');
+  const hidePassButton = Boolean(
+    zoomedCard ||
+    viewingZone ||
+    showLog ||
+    showExitConfirm ||
+    dandanCastConfirm ||
+    dandanAttackBlockedDialog ||
+    showMenuSettings ||
+    showPlayerAvatarDialog ||
+    showRivalMenu ||
+    state.pendingTargetSelection ||
+    state.pendingAction ||
+    state.phase === 'mulligan'
+  );
+  const canTriggerPassShortcut = state.started && !isAiMirror && !hidePassButton && state.priority === 'player' && !state.stackResolving && !isAutoPassing;
+  const handlePassPriority = () => {
+    AudioEngine.init();
+    dispatch({ type: 'PASS_PRIORITY', player: 'player' });
+  };
+
+  useEffect(() => {
+    if (!canTriggerPassShortcut) return;
+
+    const handleWindowKeyDown = (event) => {
+      if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName;
+        if (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON') return;
+      }
+
+      event.preventDefault();
+      handlePassPriority();
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [canTriggerPassShortcut, handlePassPriority]);
+
+
   const startMatch = (mode, aiCharacterId, playerAiCharacterId = null, difficultyOverride = selectedDifficulty) => {
     if (openingRollState) return;
     if (mode !== 'peer' && isPeerSessionActive) {
@@ -6798,46 +6840,7 @@ export default function App() {
     );
   }
 
-  const isAutoPassing = state.priority === 'player' && !state.stackResolving && !state.pendingTargetSelection && !state.pendingAction && !dandanCastConfirm && !dandanAttackBlockedDialog && !canPlayerAttemptAttackSelection && !checkHasActions(state, 'player');
-  const hidePassButton = Boolean(
-    zoomedCard ||
-    viewingZone ||
-    showLog ||
-    showExitConfirm ||
-    dandanCastConfirm ||
-    dandanAttackBlockedDialog ||
-    showMenuSettings ||
-    showPlayerAvatarDialog ||
-    showRivalMenu ||
-    state.pendingTargetSelection ||
-    state.pendingAction ||
-    state.phase === 'mulligan'
-  );
-  const canTriggerPassShortcut = state.started && !isAiMirror && !hidePassButton && state.priority === 'player' && !state.stackResolving && !isAutoPassing;
-  const handlePassPriority = () => {
-    AudioEngine.init();
-    dispatch({ type: 'PASS_PRIORITY', player: 'player' });
-  };
 
-  useEffect(() => {
-    if (!canTriggerPassShortcut) return;
-
-    const handleWindowKeyDown = (event) => {
-      if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tagName = target.tagName;
-        if (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON') return;
-      }
-
-      event.preventDefault();
-      handlePassPriority();
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [canTriggerPassShortcut, handlePassPriority]);
 
   let passIcon = <SkipForward size={14} className={state.priority === 'player' && !state.stackResolving ? 'text-current' : 'text-slate-600'}/>;
   let passLabel = 'PASS';

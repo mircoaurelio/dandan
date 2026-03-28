@@ -11,3 +11,9 @@ serve.out.log
 serve.err.log
 training-output/*.log
 training-output/engine-selfplay-report.json
+
+# IDEs and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
