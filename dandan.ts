@@ -6277,6 +6277,48 @@ export default function App() {
 
   const adventurePathPoints = ADVENTURE_MAP_LAYOUT.map(({ left, top }) => `${left},${top}`).join(' ');
 
+  const isAutoPassing = state.priority === 'player' && !state.stackResolving && !state.pendingTargetSelection && !state.pendingAction && !dandanCastConfirm && !dandanAttackBlockedDialog && !canPlayerAttemptAttackSelection && !checkHasActions(state, 'player');
+  const hidePassButton = Boolean(
+    zoomedCard ||
+    viewingZone ||
+    showLog ||
+    showExitConfirm ||
+    dandanCastConfirm ||
+    dandanAttackBlockedDialog ||
+    showMenuSettings ||
+    showPlayerAvatarDialog ||
+    showRivalMenu ||
+    state.pendingTargetSelection ||
+    state.pendingAction ||
+    state.phase === 'mulligan'
+  );
+  const canTriggerPassShortcut = state.started && !isAiMirror && !hidePassButton && state.priority === 'player' && !state.stackResolving && !isAutoPassing;
+  const handlePassPriority = () => {
+    AudioEngine.init();
+    dispatch({ type: 'PASS_PRIORITY', player: 'player' });
+  };
+
+  useEffect(() => {
+    if (!canTriggerPassShortcut) return;
+
+    const handleWindowKeyDown = (event) => {
+      if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tagName = target.tagName;
+        if (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON') return;
+      }
+
+      event.preventDefault();
+      AudioEngine.init();
+      dispatch({ type: 'PASS_PRIORITY', player: 'player' });
+    };
+
+    window.addEventListener('keydown', handleWindowKeyDown);
+    return () => window.removeEventListener('keydown', handleWindowKeyDown);
+  }, [canTriggerPassShortcut]);
+
   if (!menuAssetsReady) {
     return <Preloader onComplete={() => setMenuAssetsReady(true)} />;
   }
@@ -6797,47 +6839,6 @@ export default function App() {
       </div>
     );
   }
-
-  const isAutoPassing = state.priority === 'player' && !state.stackResolving && !state.pendingTargetSelection && !state.pendingAction && !dandanCastConfirm && !dandanAttackBlockedDialog && !canPlayerAttemptAttackSelection && !checkHasActions(state, 'player');
-  const hidePassButton = Boolean(
-    zoomedCard ||
-    viewingZone ||
-    showLog ||
-    showExitConfirm ||
-    dandanCastConfirm ||
-    dandanAttackBlockedDialog ||
-    showMenuSettings ||
-    showPlayerAvatarDialog ||
-    showRivalMenu ||
-    state.pendingTargetSelection ||
-    state.pendingAction ||
-    state.phase === 'mulligan'
-  );
-  const canTriggerPassShortcut = state.started && !isAiMirror && !hidePassButton && state.priority === 'player' && !state.stackResolving && !isAutoPassing;
-  const handlePassPriority = () => {
-    AudioEngine.init();
-    dispatch({ type: 'PASS_PRIORITY', player: 'player' });
-  };
-
-  useEffect(() => {
-    if (!canTriggerPassShortcut) return;
-
-    const handleWindowKeyDown = (event) => {
-      if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tagName = target.tagName;
-        if (target.isContentEditable || tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON') return;
-      }
-
-      event.preventDefault();
-      handlePassPriority();
-    };
-
-    window.addEventListener('keydown', handleWindowKeyDown);
-    return () => window.removeEventListener('keydown', handleWindowKeyDown);
-  }, [canTriggerPassShortcut, handlePassPriority]);
 
   let passIcon = <SkipForward size={14} className={state.priority === 'player' && !state.stackResolving ? 'text-current' : 'text-slate-600'}/>;
   let passLabel = 'PASS';
