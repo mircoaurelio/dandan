@@ -803,7 +803,9 @@ const cloneKnowledgeCard = (card) => card ? ({
   blueRequirement: card.blueRequirement || getBlueRequirement(card.manaCost || ''),
   isLand: Boolean(card.isLand),
   type: card.type,
-  manaCost: card.manaCost
+  manaCost: card.manaCost,
+  image: card.image,
+  fullImage: card.fullImage
 }) : null;
 const createKnowledgeView = () => ({
   knownTop: [],
